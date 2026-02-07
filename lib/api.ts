@@ -23,9 +23,16 @@ import {
   mockUsers
 } from "@/lib/mock-data";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+const DEFAULT_LOCAL_API_BASE = "http://localhost:3000";
+const DEFAULT_PROD_API_BASE = "https://api.metaquorum.com";
+const PROXY_API_BASE = "/api/proxy";
+const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
+const ENABLE_LEGACY_ACTIVITY_API = process.env.NEXT_PUBLIC_ENABLE_LEGACY_ACTIVITY_API === "true";
+
+export const API_BASE = resolveApiBase();
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
+let warnedLocalApiInRemoteRuntime = false;
 
 type SubmitPostInput = Partial<Post> & Pick<Post, "title" | "body" | "quorum">;
 type SubmitReplyInput = {
@@ -117,6 +124,10 @@ export function subscribeActivityStream(
   onMessage: (items: ActivityItem[]) => void,
   onError?: (error?: unknown) => void
 ): (() => void) | null {
+  if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
+    return null;
+  }
+
   return createEventSourceStream("/api/activity/stream", (payload) => {
     if (Array.isArray(payload)) {
       onMessage(payload as ActivityItem[]);
@@ -149,11 +160,7 @@ export function subscribeAnalysisEventsStream(
 }
 
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
-  try {
-    return await requestJson<{ status: string; timestamp?: string }>("/health", { cache: "no-store" });
-  } catch {
-    return requestJson<{ status: string; timestamp?: string }>("/api/health", { cache: "no-store" });
-  }
+  return requestJson<{ status: string; timestamp?: string }>("/health", { cache: "no-store" });
 }
 
 export async function fetchQuorums(): Promise<Quorum[]> {
@@ -265,6 +272,15 @@ export async function fetchAgent(slug: string): Promise<Agent | null> {
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
+  if (USE_MOCK_API) {
+    refreshMockActivity();
+    return deepCopy(db.activity);
+  }
+
+  if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
+    return [];
+  }
+
   return withBackendFallback(
     () => requestJson<ActivityItem[]>("/api/activity"),
     () => {
@@ -771,11 +787,62 @@ async function requestMaybeApi<T>(path: string, init?: RequestInit): Promise<T |
 }
 
 async function fetchWithDefaults(path: string, init?: RequestInit): Promise<Response> {
+  ensureApiBaseIsReachableFromCurrentOrigin();
+
   return fetch(`${API_BASE}${path}`, {
     ...init,
     headers: buildRequestHeaders(init),
     cache: init?.cache ?? "no-store"
   });
+}
+
+function resolveApiBase(): string {
+  const configuredBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  if (typeof window === "undefined") {
+    return configuredBase || DEFAULT_PROD_API_BASE;
+  }
+
+  const host = window.location.hostname;
+  const appIsLocal = host === "localhost" || host === "127.0.0.1";
+  if (appIsLocal) {
+    return configuredBase || DEFAULT_LOCAL_API_BASE;
+  }
+
+  if (USE_API_PROXY) {
+    return PROXY_API_BASE;
+  }
+
+  return configuredBase || DEFAULT_PROD_API_BASE;
+}
+
+function ensureApiBaseIsReachableFromCurrentOrigin() {
+  if (typeof window === "undefined" || warnedLocalApiInRemoteRuntime) {
+    return;
+  }
+
+  const appHost = window.location.hostname;
+  const appIsLocal = appHost === "localhost" || appHost === "127.0.0.1";
+  if (appIsLocal) {
+    return;
+  }
+
+  let apiHost = "";
+  try {
+    apiHost = new URL(API_BASE, window.location.origin).hostname;
+  } catch {
+    return;
+  }
+
+  const apiIsLocal = apiHost === "localhost" || apiHost === "127.0.0.1";
+  if (!apiIsLocal) {
+    return;
+  }
+
+  warnedLocalApiInRemoteRuntime = true;
+  throw new Error(
+    "NEXT_PUBLIC_API_URL points to localhost while the app runs remotely. Set NEXT_PUBLIC_API_URL to your deployed API URL (for example https://api.metaquorum.com)."
+  );
 }
 
 function buildRequestHeaders(init?: RequestInit): Headers {
