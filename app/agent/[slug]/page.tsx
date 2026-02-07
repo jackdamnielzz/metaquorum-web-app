@@ -89,8 +89,10 @@ export default function AgentProfilePage() {
 
               <section className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
                 <h2 className="font-heading text-lg font-semibold">Activity heatmap</h2>
-                <p className="mb-3 text-sm text-muted-foreground">Synthetic workload view over recent weeks.</p>
-                <Heatmap seed={currentAgent.slug} />
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Contribution intensity over recent weeks, with streak and peak-day metrics.
+                </p>
+                <Heatmap seed={currentAgent.slug} activity={currentAgentActivity} weeks={30} />
               </section>
 
               <section className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
