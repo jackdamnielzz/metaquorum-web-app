@@ -23,8 +23,10 @@ export default function SubmitPage() {
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
+  const health = useAppStore((state) => state.health);
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
+  const loadHealth = useAppStore((state) => state.loadHealth);
   const createPost = useAppStore((state) => state.createPost);
 
   const [quorum, setQuorum] = useState("longevity");
@@ -37,7 +39,15 @@ export default function SubmitPage() {
   useEffect(() => {
     loadHome();
     loadAgents();
-  }, [loadHome, loadAgents]);
+    loadHealth();
+  }, [loadHome, loadAgents, loadHealth]);
+
+  useEffect(() => {
+    const fromQuery = new URLSearchParams(window.location.search).get("quorum");
+    if (fromQuery) {
+      setQuorum(fromQuery);
+    }
+  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,7 +71,7 @@ export default function SubmitPage() {
 
   return (
     <>
-      <Navbar quorums={quorums} posts={posts} agents={agents} />
+      <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
       <PageTransition>
         <main className="page-shell py-6">
           <section className="mx-auto max-w-2xl rounded-xl border border-border bg-card p-5 shadow-card">

@@ -1,4 +1,4 @@
-import { ActivityItem, Agent, AgentActivity, PostDetail, Quorum, User } from "@/lib/types";
+import { ActivityItem, Agent, AgentActivity, Post, PostDetail, Quorum, User, UserProfile } from "@/lib/types";
 
 const humanEduard: User = {
   id: "u-eduard",
@@ -465,3 +465,69 @@ export const mockAgentActivity: Record<string, AgentActivity[]> = {
     { id: "sta-3", description: "Reviewed senolytics endpoint variance", timestamp: "3h ago" }
   ]
 };
+
+export const mockUsers: UserProfile[] = [
+  {
+    id: humanEduard.id,
+    username: humanEduard.username,
+    joinedAt: "2025-03-04",
+    bio: "Biomedical engineer focused on translational longevity research.",
+    stats: {
+      posts: countPostsByUser(humanEduard.id),
+      totalVotes: totalVotesByUser(humanEduard.id),
+      totalReplies: totalRepliesByUser(humanEduard.id)
+    },
+    posts: summariesByUser(humanEduard.id)
+  },
+  {
+    id: humanNiels.id,
+    username: humanNiels.username,
+    joinedAt: "2025-05-17",
+    bio: "Interested in mechanistic oncology and evidence quality.",
+    stats: {
+      posts: countPostsByUser(humanNiels.id),
+      totalVotes: totalVotesByUser(humanNiels.id),
+      totalReplies: totalRepliesByUser(humanNiels.id)
+    },
+    posts: summariesByUser(humanNiels.id)
+  },
+  {
+    id: humanAsha.id,
+    username: humanAsha.username,
+    joinedAt: "2025-06-09",
+    bio: "Data-driven preventative medicine enthusiast.",
+    stats: {
+      posts: countPostsByUser(humanAsha.id),
+      totalVotes: totalVotesByUser(humanAsha.id),
+      totalReplies: totalRepliesByUser(humanAsha.id)
+    },
+    posts: summariesByUser(humanAsha.id)
+  }
+];
+
+function summariesByUser(userId: string): Post[] {
+  return mockPosts
+    .filter((post) => post.author.type === "human" && post.author.id === userId)
+    .map(stripReplies);
+}
+
+function countPostsByUser(userId: string): number {
+  return mockPosts.filter((post) => post.author.type === "human" && post.author.id === userId).length;
+}
+
+function totalVotesByUser(userId: string): number {
+  return mockPosts
+    .filter((post) => post.author.type === "human" && post.author.id === userId)
+    .reduce((total, post) => total + post.votes, 0);
+}
+
+function totalRepliesByUser(userId: string): number {
+  return mockPosts
+    .filter((post) => post.author.type === "human" && post.author.id === userId)
+    .reduce((total, post) => total + post.replyCount, 0);
+}
+
+function stripReplies(post: PostDetail): Post {
+  const { replies: _replies, ...summary } = post;
+  return summary;
+}

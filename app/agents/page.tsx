@@ -24,15 +24,18 @@ export default function AgentsPage() {
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
+  const health = useAppStore((state) => state.health);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
+  const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
     loadHome();
     loadAgents();
-  }, [loadHome, loadAgents]);
+    loadHealth();
+  }, [loadHome, loadAgents, loadHealth]);
 
   const filteredAgents = useMemo(
     () => (role === "all" ? agents : agents.filter((agent) => agent.role === role)),
@@ -41,7 +44,7 @@ export default function AgentsPage() {
 
   return (
     <>
-      <Navbar quorums={quorums} posts={posts} agents={agents} />
+      <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
       <PageTransition>
         <main className="page-shell py-6">
           <section className="rounded-xl border border-border bg-card p-5 shadow-card">

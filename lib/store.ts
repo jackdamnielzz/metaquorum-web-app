@@ -2,17 +2,33 @@
 
 import { create } from "zustand";
 import {
+  fetchExploreGraph,
   fetchActivity,
   fetchAgent,
   fetchAgentActivity,
   fetchAgents,
+  fetchHealth,
+  fetchLeaderboard,
   fetchPost,
   fetchPosts,
   fetchQuorums,
+  fetchUserProfile,
   submitPost,
   vote
 } from "@/lib/api";
-import { ActivityItem, Agent, AgentActivity, Post, PostDetail, PostType, Quorum } from "@/lib/types";
+import {
+  ActivityItem,
+  Agent,
+  AgentActivity,
+  ExploreGraphData,
+  LeaderboardData,
+  LeaderboardTimeframe,
+  Post,
+  PostDetail,
+  PostType,
+  Quorum,
+  UserProfile
+} from "@/lib/types";
 
 export type SortMode = "hot" | "new" | "consensus";
 
@@ -34,6 +50,10 @@ type AppStore = {
   currentPost: PostDetail | null;
   currentAgent: Agent | null;
   currentAgentActivity: AgentActivity[];
+  currentUser: UserProfile | null;
+  leaderboard: LeaderboardData | null;
+  exploreGraph: ExploreGraphData | null;
+  health: { status: string; ok: boolean } | null;
   isLoading: boolean;
   error: string | null;
   loadHome: () => Promise<void>;
@@ -41,6 +61,10 @@ type AppStore = {
   loadPost: (id: string) => Promise<void>;
   loadAgents: () => Promise<void>;
   loadAgentProfile: (slug: string) => Promise<void>;
+  loadUserProfile: (username: string) => Promise<void>;
+  loadLeaderboard: (timeframe?: LeaderboardTimeframe) => Promise<void>;
+  loadExploreGraph: (quorum?: string) => Promise<void>;
+  loadHealth: () => Promise<void>;
   setSortMode: (sortMode: SortMode) => void;
   votePost: (postId: string) => Promise<void>;
   createPost: (input: CreatePostInput) => Promise<Post | null>;
@@ -56,6 +80,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentPost: null,
   currentAgent: null,
   currentAgentActivity: [],
+  currentUser: null,
+  leaderboard: null,
+  exploreGraph: null,
+  health: null,
   isLoading: false,
   error: null,
 
@@ -151,6 +179,58 @@ export const useAppStore = create<AppStore>((set, get) => ({
         isLoading: false,
         error: error instanceof Error ? error.message : "Failed to load agent profile"
       });
+    }
+  },
+
+  loadUserProfile: async (username) => {
+    set({ isLoading: true, error: null, currentUser: null });
+    try {
+      const user = await fetchUserProfile(username);
+      if (!user) {
+        set({ isLoading: false, error: "User not found" });
+        return;
+      }
+      set({ currentUser: user, isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load user profile"
+      });
+    }
+  },
+
+  loadLeaderboard: async (timeframe = "all") => {
+    set({ isLoading: true, error: null });
+    try {
+      const leaderboard = await fetchLeaderboard(timeframe);
+      set({ leaderboard, isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load leaderboard"
+      });
+    }
+  },
+
+  loadExploreGraph: async (quorum) => {
+    set({ isLoading: true, error: null });
+    try {
+      const exploreGraph = await fetchExploreGraph(quorum);
+      set({ exploreGraph, isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load explore graph"
+      });
+    }
+  },
+
+  loadHealth: async () => {
+    try {
+      const health = await fetchHealth();
+      set({ health: { status: health.status, ok: true } });
+    } catch {
+      set({ health: { status: "offline", ok: false } });
     }
   },
 

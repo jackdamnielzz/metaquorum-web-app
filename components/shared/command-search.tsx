@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Bot, FolderSearch, Search } from "lucide-react";
+import { BellRing, Bot, FilePlus, FolderSearch, Info, Search, Trophy, Workflow } from "lucide-react";
 import { Agent, Post, Quorum } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,6 +84,24 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
                   {agent.name}
                 </CommandItem>
               ))}
+            </CommandGroup>
+            <CommandGroup heading="Pages">
+              <CommandItem onSelect={() => navigate("/submit")}>
+                <FilePlus className="mr-2 h-4 w-4 text-primary" />
+                Submit Post
+              </CommandItem>
+              <CommandItem onSelect={() => navigate("/leaderboard")}>
+                <Trophy className="mr-2 h-4 w-4 text-amber-600" />
+                Leaderboard
+              </CommandItem>
+              <CommandItem onSelect={() => navigate("/explore")}>
+                <Workflow className="mr-2 h-4 w-4 text-indigo-600" />
+                Explore Map
+              </CommandItem>
+              <CommandItem onSelect={() => navigate("/about")}>
+                <Info className="mr-2 h-4 w-4 text-zinc-600" />
+                About
+              </CommandItem>
             </CommandGroup>
           </CommandList>
         </Command>

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { Flame, Sparkles, TrendingUp } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { PostCard } from "@/components/post/post-card";
 import { ActivityFeed } from "@/components/shared/activity-feed";
 import { PageTransition } from "@/components/shared/page-transition";
 import { QuorumChip } from "@/components/shared/quorum-chip";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore, type SortMode } from "@/lib/store";
 
@@ -21,21 +23,24 @@ export default function HomePage() {
   const posts = useAppStore((state) => state.posts);
   const activity = useAppStore((state) => state.activity);
   const agents = useAppStore((state) => state.agents);
+  const health = useAppStore((state) => state.health);
   const sortMode = useAppStore((state) => state.sortMode);
   const error = useAppStore((state) => state.error);
   const isLoading = useAppStore((state) => state.isLoading);
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
+  const loadHealth = useAppStore((state) => state.loadHealth);
   const setSortMode = useAppStore((state) => state.setSortMode);
 
   useEffect(() => {
     loadHome();
     loadAgents();
-  }, [loadHome, loadAgents]);
+    loadHealth();
+  }, [loadHome, loadAgents, loadHealth]);
 
   return (
     <>
-      <Navbar quorums={quorums} posts={posts} agents={agents} />
+      <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
       <PageTransition>
         <main className="page-shell py-6">
           <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -60,6 +65,14 @@ export default function HomePage() {
                     ))}
                   </TabsList>
                 </Tabs>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href="/submit">New post</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/explore">Open explore map</Link>
+                  </Button>
+                </div>
               </section>
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}

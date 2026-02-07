@@ -2,16 +2,23 @@ import {
   ActivityItem,
   Agent,
   AgentActivity,
+  ExploreGraphData,
+  ExploreLink,
+  ExploreNode,
+  LeaderboardData,
+  LeaderboardTimeframe,
   Post,
   PostDetail,
-  Quorum
+  Quorum,
+  UserProfile
 } from "@/lib/types";
 import {
   mockActivityFeed,
   mockAgentActivity,
   mockAgents,
   mockPosts,
-  mockQuorums
+  mockQuorums,
+  mockUsers
 } from "@/lib/mock-data";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -24,6 +31,7 @@ type MockDb = {
   posts: PostDetail[];
   activity: ActivityItem[];
   agentActivity: Record<string, AgentActivity[]>;
+  users: UserProfile[];
   votedPostIds: Set<string>;
 };
 
@@ -33,6 +41,7 @@ const db: MockDb = {
   posts: deepCopy(mockPosts),
   activity: deepCopy(mockActivityFeed),
   agentActivity: deepCopy(mockAgentActivity),
+  users: deepCopy(mockUsers),
   votedPostIds: new Set<string>()
 };
 
@@ -73,6 +82,89 @@ export async function fetchActivity(): Promise<ActivityItem[]> {
 
 export async function fetchAgentActivity(slug: string): Promise<AgentActivity[]> {
   return deepCopy(db.agentActivity[slug] ?? []);
+}
+
+export async function fetchUserProfile(username: string): Promise<UserProfile | null> {
+  const user = db.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
+  if (!user) {
+    return null;
+  }
+  return deepCopy(buildUserProfile(user));
+}
+
+export async function fetchLeaderboard(_timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
+  const topAgents = [...db.agents].sort((a, b) => b.stats.accuracy - a.stats.accuracy).slice(0, 6);
+  const topPosts = [...db.posts]
+    .map(stripReplies)
+    .sort((a, b) => scorePost(b) - scorePost(a))
+    .slice(0, 8);
+
+  const topQuorums = db.quorums
+    .map((quorum) => {
+      const related = db.posts.filter((post) => post.quorum === quorum.name);
+      const activityScore = related.reduce((score, post) => score + post.votes + post.replyCount * 1.5, 0);
+      return { quorum, activityScore };
+    })
+    .sort((a, b) => b.activityScore - a.activityScore);
+
+  return deepCopy({ topAgents, topPosts, topQuorums });
+}
+
+export async function fetchExploreGraph(quorum?: string): Promise<ExploreGraphData> {
+  const posts = quorum ? db.posts.filter((entry) => entry.quorum === quorum) : db.posts;
+  const nodes = new Map<string, ExploreNode>();
+  const links: ExploreLink[] = [];
+
+  for (const post of posts) {
+    const quorumKey = `q:${post.quorum}`;
+    if (!nodes.has(quorumKey)) {
+      const q = db.quorums.find((entry) => entry.name === post.quorum);
+      nodes.set(quorumKey, {
+        id: quorumKey,
+        label: q?.displayName ?? post.quorum,
+        type: "quorum",
+        quorum: post.quorum
+      });
+    }
+
+    const postKey = `p:${post.id}`;
+    nodes.set(postKey, {
+      id: postKey,
+      label: post.title,
+      type: "post",
+      quorum: post.quorum,
+      confidence: post.consensus
+    });
+    links.push({ source: quorumKey, target: postKey });
+
+    const authorKey =
+      post.author.type === "agent"
+        ? `a:${post.author.slug}`
+        : `a:user:${post.author.username}`;
+    if (!nodes.has(authorKey)) {
+      nodes.set(authorKey, {
+        id: authorKey,
+        label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
+        type: "agent",
+        quorum: post.quorum
+      });
+    }
+    links.push({ source: authorKey, target: postKey });
+
+    post.claims.forEach((claim) => {
+      const claimKey = `c:${claim.id}`;
+      nodes.set(claimKey, {
+        id: claimKey,
+        label: claim.text,
+        type: "claim",
+        quorum: post.quorum,
+        confidence: claim.consensus
+      });
+      links.push({ source: postKey, target: claimKey });
+    });
+  }
+
+  return deepCopy({ nodes: [...nodes.values()], links });
 }
 
 export async function vote(postId: string): Promise<Post | null> {
@@ -118,12 +210,53 @@ export async function submitPost(data: SubmitPostInput): Promise<Post> {
     quorum.postCount += 1;
   }
 
+  if (newPost.author.type === "human") {
+    ensureUserProfile(newPost.author.id, newPost.author.username);
+  }
+
   return deepCopy(stripReplies(newPost));
+}
+
+function ensureUserProfile(userId: string, username: string) {
+  const exists = db.users.find((entry) => entry.id === userId);
+  if (exists) {
+    return;
+  }
+  db.users.push({
+    id: userId,
+    username,
+    joinedAt: new Date().toISOString().slice(0, 10),
+    bio: "MetaQuorum member",
+    stats: { posts: 0, totalVotes: 0, totalReplies: 0 },
+    posts: []
+  });
 }
 
 function stripReplies(post: PostDetail): Post {
   const { replies: _replies, ...summary } = post;
   return summary;
+}
+
+function buildUserProfile(user: UserProfile): UserProfile {
+  const userPosts = db.posts
+    .filter((post) => post.author.type === "human" && post.author.username === user.username)
+    .map(stripReplies);
+  const totalVotes = userPosts.reduce((sum, post) => sum + post.votes, 0);
+  const totalReplies = userPosts.reduce((sum, post) => sum + post.replyCount, 0);
+
+  return {
+    ...user,
+    posts: userPosts,
+    stats: {
+      posts: userPosts.length,
+      totalVotes,
+      totalReplies
+    }
+  };
+}
+
+function scorePost(post: Post): number {
+  return post.votes * 0.65 + post.consensus * 0.35 + post.replyCount * 0.25;
 }
 
 function createId(prefix: string): string {

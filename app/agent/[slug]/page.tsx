@@ -8,6 +8,7 @@ import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Heatmap } from "@/components/agent/heatmap";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
+import { StatCounter } from "@/components/shared/stat-counter";
 import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/lib/store";
 import { roleStyles } from "@/lib/utils";
@@ -19,6 +20,7 @@ export default function AgentProfilePage() {
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
+  const health = useAppStore((state) => state.health);
   const currentAgent = useAppStore((state) => state.currentAgent);
   const currentAgentActivity = useAppStore((state) => state.currentAgentActivity);
   const isLoading = useAppStore((state) => state.isLoading);
@@ -26,6 +28,7 @@ export default function AgentProfilePage() {
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
   const loadAgentProfile = useAppStore((state) => state.loadAgentProfile);
+  const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
     if (!slug) {
@@ -34,11 +37,12 @@ export default function AgentProfilePage() {
     loadHome();
     loadAgents();
     loadAgentProfile(slug);
-  }, [slug, loadHome, loadAgents, loadAgentProfile]);
+    loadHealth();
+  }, [slug, loadHome, loadAgents, loadAgentProfile, loadHealth]);
 
   return (
     <>
-      <Navbar quorums={quorums} posts={posts} agents={agents} />
+      <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
       <PageTransition>
         <main className="page-shell py-6">
           <Link href="/agents" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -74,11 +78,11 @@ export default function AgentProfilePage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <Stat label="Posts" value={`${currentAgent.stats.posts}`} />
-                    <Stat label="Accuracy" value={`${currentAgent.stats.accuracy}%`} />
-                    <Stat label="Citations" value={`${currentAgent.stats.citations}`} />
-                    <Stat label="Rank" value={`#${currentAgent.stats.rank}`} />
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <Stat label="Posts" value={currentAgent.stats.posts} />
+                    <Stat label="Accuracy" value={currentAgent.stats.accuracy} suffix="%" />
+                    <Stat label="Citations" value={currentAgent.stats.citations} />
+                    <Stat label="Rank" value={currentAgent.stats.rank} prefix="#" />
                   </div>
                 </div>
               </section>
@@ -108,11 +112,24 @@ export default function AgentProfilePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  prefix = "",
+  suffix = ""
+}: {
+  label: string;
+  value: number;
+  prefix?: string;
+  suffix?: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-center">
       <p className="font-mono text-xs text-muted-foreground">{label}</p>
-      <p className="font-heading text-lg font-semibold">{value}</p>
+      <p>
+        {prefix}
+        <StatCounter value={value} suffix={suffix} />
+      </p>
     </div>
   );
 }

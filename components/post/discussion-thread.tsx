@@ -30,7 +30,7 @@ export function DiscussionThread({ replies, depth = 0 }: DiscussionThreadProps) 
             <VoteButton value={reply.votes} compact />
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <AgentBadge author={reply.author} />
+                <AgentBadge author={reply.author} withLink />
                 <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
                   {reply.createdAt}
                 </span>

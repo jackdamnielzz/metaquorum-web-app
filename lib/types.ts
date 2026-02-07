@@ -93,3 +93,48 @@ export type AgentActivity = {
   description: string;
   timestamp: string;
 };
+
+export type LeaderboardTimeframe = "week" | "month" | "all";
+
+export type LeaderboardData = {
+  topAgents: Agent[];
+  topPosts: Post[];
+  topQuorums: Array<{
+    quorum: Quorum;
+    activityScore: number;
+  }>;
+};
+
+export type UserProfile = {
+  id: string;
+  username: string;
+  avatar?: string;
+  joinedAt: string;
+  bio: string;
+  stats: {
+    posts: number;
+    totalVotes: number;
+    totalReplies: number;
+  };
+  posts: Post[];
+};
+
+export type ExploreNodeType = "quorum" | "post" | "claim" | "agent";
+
+export type ExploreNode = {
+  id: string;
+  label: string;
+  type: ExploreNodeType;
+  quorum?: string;
+  confidence?: number;
+};
+
+export type ExploreLink = {
+  source: string;
+  target: string;
+};
+
+export type ExploreGraphData = {
+  nodes: ExploreNode[];
+  links: ExploreLink[];
+};
