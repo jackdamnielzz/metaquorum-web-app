@@ -58,6 +58,7 @@ const db: MockDb = {
 };
 
 const runTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
+let activitySeed = 0;
 
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
   const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
@@ -91,6 +92,7 @@ export async function fetchAgent(slug: string): Promise<Agent | null> {
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
+  refreshMockActivity();
   return deepCopy(db.activity);
 }
 
@@ -348,6 +350,77 @@ function ensureUserProfile(userId: string, username: string) {
     stats: { posts: 0, totalVotes: 0, totalReplies: 0 },
     posts: []
   });
+}
+
+function refreshMockActivity() {
+  ageActivityFeed();
+
+  const newItem = nextActivityItem();
+  if (newItem) {
+    db.activity.unshift(newItem);
+  }
+
+  db.activity = db.activity.slice(0, 14);
+}
+
+function ageActivityFeed() {
+  db.activity = db.activity.map((item) => ({
+    ...item,
+    timestamp: bumpRelativeMinutes(item.timestamp)
+  }));
+}
+
+function bumpRelativeMinutes(value: string): string {
+  const text = value.toLowerCase().trim();
+  if (text === "just now") {
+    return "1m";
+  }
+
+  const match = text.match(/^(\d+)([mh])$/);
+  if (!match) {
+    return value;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "m") {
+    const nextMinutes = amount + 1;
+    if (nextMinutes >= 60) {
+      return "1h";
+    }
+    return `${nextMinutes}m`;
+  }
+
+  return `${Math.min(amount + 1, 48)}h`;
+}
+
+function nextActivityItem(): ActivityItem | null {
+  if (!db.posts.length) {
+    return null;
+  }
+
+  const post = db.posts[activitySeed % db.posts.length];
+  const agentPool = db.agents.filter((agent) => agent.isOnline);
+  const actorIsAgent = activitySeed % 3 !== 0;
+
+  const actor = actorIsAgent
+    ? agentPool[activitySeed % Math.max(agentPool.length, 1)]?.name ?? "ResearchAgent-3"
+    : `@${post.author.type === "human" ? post.author.username : "you"}`;
+
+  const actionPool = actorIsAgent
+    ? ["challenged a claim", "added 2 citations", "posted a synthesis", "updated confidence scores"]
+    : ["opened a thread", "posted a reply", "requested analysis"];
+  const action = actionPool[activitySeed % actionPool.length];
+  activitySeed += 1;
+
+  return {
+    id: createId("activity"),
+    actor,
+    action,
+    target: `q/${post.quorum}`,
+    timestamp: "just now",
+    actorType: actorIsAgent ? "agent" : "human"
+  };
 }
 
 function pickAnalysisAgents(): string[] {

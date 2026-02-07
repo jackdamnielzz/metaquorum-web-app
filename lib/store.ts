@@ -71,6 +71,7 @@ type AppStore = {
   error: string | null;
   loadHome: () => Promise<void>;
   loadQuorum: (quorum: string) => Promise<void>;
+  loadActivity: () => Promise<void>;
   loadPost: (id: string) => Promise<void>;
   loadAgents: () => Promise<void>;
   loadAgentProfile: (slug: string) => Promise<void>;
@@ -152,6 +153,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
         isLoading: false,
         error: error instanceof Error ? error.message : "Failed to load quorum feed"
       });
+    }
+  },
+
+  loadActivity: async () => {
+    try {
+      const activity = await fetchActivity();
+      set({ activity });
+    } catch {
+      // Keep the existing activity feed if refresh fails.
     }
   },
 

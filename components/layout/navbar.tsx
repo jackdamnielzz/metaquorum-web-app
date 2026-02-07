@@ -30,6 +30,7 @@ type NavbarProps = {
 
 export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
   const activity = useAppStore((state) => state.activity);
+  const loadActivity = useAppStore((state) => state.loadActivity);
   const [showAccount, setShowAccount] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
 
@@ -47,6 +48,14 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
     document.addEventListener("mousedown", onDocumentClick);
     return () => document.removeEventListener("mousedown", onDocumentClick);
   }, []);
+
+  useEffect(() => {
+    loadActivity();
+    const timer = setInterval(() => {
+      void loadActivity();
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [loadActivity]);
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-background/80 backdrop-blur">
