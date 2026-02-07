@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppStore } from "@/lib/store";
+import { useToast } from "@/lib/toast-store";
 import { PostType } from "@/lib/types";
 
 const postTypes: Array<{ value: PostType; label: string }> = [
@@ -20,6 +21,7 @@ const postTypes: Array<{ value: PostType; label: string }> = [
 
 export default function SubmitPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
@@ -65,8 +67,19 @@ export default function SubmitPage() {
     });
     setIsSubmitting(false);
     if (created) {
+      toast({
+        title: "Post created",
+        description: `Thread created in q/${created.quorum}.`,
+        variant: "success"
+      });
       router.push(`/q/${created.quorum}/post/${created.id}`);
+      return;
     }
+    toast({
+      title: "Could not create post",
+      description: "Please try again.",
+      variant: "error"
+    });
   }
 
   return (

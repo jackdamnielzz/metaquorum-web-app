@@ -10,17 +10,20 @@ import { AnalysisPanel } from "@/components/post/analysis-panel";
 import { ClaimCard } from "@/components/post/claim-card";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
+import { PostDetailSkeleton } from "@/components/shared/loading-skeletons";
 import { PageTransition } from "@/components/shared/page-transition";
 import { ReplyBox } from "@/components/shared/reply-box";
 import { VoteButton } from "@/components/shared/vote-button";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
+import { useToast } from "@/lib/toast-store";
 
 export default function PostPage() {
   const params = useParams<{ quorum: string; id: string }>();
   const quorumSlug = params?.quorum ?? "";
   const postId = params?.id ?? "";
   const [showGraph, setShowGraph] = useState(false);
+  const { toast } = useToast();
 
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
@@ -88,7 +91,7 @@ export default function PostPage() {
           </Link>
 
           {isLoading && !currentPost ? (
-            <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading post...</div>
+            <PostDetailSkeleton />
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
@@ -136,9 +139,34 @@ export default function PostPage() {
                   currentRunId={currentAnalysisRunId}
                   events={analysisEvents}
                   loading={analysisLoading}
-                  onStart={(id) => void startAnalysisForPost(id)}
+                  onStart={(id) => {
+                    void (async () => {
+                      const run = await startAnalysisForPost(id);
+                      if (run) {
+                        toast({
+                          title: "Analysis started",
+                          description: `Run ${run.id} is now ${run.status}.`,
+                          variant: "success"
+                        });
+                        return;
+                      }
+                      toast({
+                        title: "Analysis failed to start",
+                        description: "Please try again.",
+                        variant: "error"
+                      });
+                    })();
+                  }}
                   onSelect={(runId) => void selectAnalysisRun(runId)}
-                  onCancel={() => void cancelCurrentAnalysis()}
+                  onCancel={() => {
+                    void (async () => {
+                      await cancelCurrentAnalysis();
+                      toast({
+                        title: "Analysis cancelled",
+                        description: "Current run has been cancelled."
+                      });
+                    })();
+                  }}
                   onRefresh={() => void refreshCurrentAnalysis()}
                 />
               </section>
@@ -158,7 +186,20 @@ export default function PostPage() {
                 <ReplyBox
                   isSubmitting={replySubmitting}
                   onSubmitReply={async (body) => {
-                    await submitReplyToCurrentPost(body);
+                    const ok = await submitReplyToCurrentPost(body);
+                    if (ok) {
+                      toast({
+                        title: "Reply posted",
+                        description: "Your reply is now visible in the thread.",
+                        variant: "success"
+                      });
+                      return;
+                    }
+                    toast({
+                      title: "Could not post reply",
+                      description: "Please try again.",
+                      variant: "error"
+                    });
                   }}
                 />
               </section>

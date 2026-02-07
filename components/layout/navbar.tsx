@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, FlaskConical, UserRound } from "lucide-react";
+import { Bell, FlaskConical, Menu, UserRound } from "lucide-react";
 import { Agent, Post, Quorum } from "@/lib/types";
 import { CommandSearch } from "@/components/shared/command-search";
 import { HealthIndicator } from "@/components/shared/health-indicator";
@@ -75,6 +75,43 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button type="button" variant="outline" size="icon" aria-label="Menu" className="md:hidden">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Navigation</DialogTitle>
+                <DialogDescription>Browse MetaQuorum sections.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1">
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/">Home</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/agents">Agents</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/leaderboard">Leaderboard</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/explore">Explore</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/submit">New post</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/about">About</Link>
+                </Button>
+              </div>
+              <div className="pt-2">
+                <HealthIndicator health={health} />
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <div className="hidden lg:block">
             <HealthIndicator health={health} />
           </div>
