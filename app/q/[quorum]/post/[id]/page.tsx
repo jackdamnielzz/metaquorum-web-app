@@ -128,7 +128,27 @@ export default function PostPage() {
               <section className="mt-6">
                 <h2 className="font-heading text-lg font-semibold">Discussion</h2>
                 <div className="mt-3">
-                  <DiscussionThread replies={currentPost.replies} />
+                  <DiscussionThread
+                    replies={currentPost.replies}
+                    isSubmitting={replySubmitting}
+                    onReply={async (body, parentId) => {
+                      const ok = await submitReplyToCurrentPost(body, parentId);
+                      if (ok) {
+                        toast({
+                          title: "Reply posted",
+                          description: "Nested reply added to the thread.",
+                          variant: "success"
+                        });
+                        return true;
+                      }
+                      toast({
+                        title: "Could not post reply",
+                        description: "Please try again.",
+                        variant: "error"
+                      });
+                      return false;
+                    }}
+                  />
                 </div>
               </section>
 
@@ -193,13 +213,14 @@ export default function PostPage() {
                         description: "Your reply is now visible in the thread.",
                         variant: "success"
                       });
-                      return;
+                      return true;
                     }
                     toast({
                       title: "Could not post reply",
                       description: "Please try again.",
                       variant: "error"
                     });
+                    return false;
                   }}
                 />
               </section>

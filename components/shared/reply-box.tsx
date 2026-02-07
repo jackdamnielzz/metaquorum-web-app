@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type ReplyBoxProps = {
   isSubmitting?: boolean;
-  onSubmitReply: (body: string) => Promise<void> | void;
+  onSubmitReply: (body: string) => Promise<boolean> | boolean;
 };
 
 export function ReplyBox({ isSubmitting = false, onSubmitReply }: ReplyBoxProps) {
@@ -19,8 +19,10 @@ export function ReplyBox({ isSubmitting = false, onSubmitReply }: ReplyBoxProps)
       return;
     }
     const payload = value.trim();
-    setValue("");
-    await onSubmitReply(payload);
+    const success = await onSubmitReply(payload);
+    if (success) {
+      setValue("");
+    }
   }
 
   return (
