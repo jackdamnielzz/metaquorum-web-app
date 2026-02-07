@@ -1,4 +1,6 @@
 import {
+  AnalysisEvent,
+  AnalysisRun,
   ActivityItem,
   Agent,
   AgentActivity,
@@ -32,6 +34,8 @@ type MockDb = {
   activity: ActivityItem[];
   agentActivity: Record<string, AgentActivity[]>;
   users: UserProfile[];
+  analysisRuns: AnalysisRun[];
+  analysisEvents: Record<string, AnalysisEvent[]>;
   votedPostIds: Set<string>;
 };
 
@@ -42,8 +46,12 @@ const db: MockDb = {
   activity: deepCopy(mockActivityFeed),
   agentActivity: deepCopy(mockAgentActivity),
   users: deepCopy(mockUsers),
+  analysisRuns: [],
+  analysisEvents: {},
   votedPostIds: new Set<string>()
 };
+
+const runTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
 
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
   const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
@@ -167,6 +175,68 @@ export async function fetchExploreGraph(quorum?: string): Promise<ExploreGraphDa
   return deepCopy({ nodes: [...nodes.values()], links });
 }
 
+export async function fetchPostAnalysisRuns(postId: string): Promise<AnalysisRun[]> {
+  const runs = db.analysisRuns
+    .filter((run) => run.postId === postId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return deepCopy(runs);
+}
+
+export async function fetchAnalysisRun(runId: string): Promise<AnalysisRun | null> {
+  const run = db.analysisRuns.find((entry) => entry.id === runId);
+  return run ? deepCopy(run) : null;
+}
+
+export async function fetchAnalysisEvents(runId: string): Promise<AnalysisEvent[]> {
+  const events = db.analysisEvents[runId] ?? [];
+  return deepCopy(events);
+}
+
+export async function startAnalysisRun(postId: string): Promise<AnalysisRun> {
+  const startedAt = new Date().toISOString();
+  const run: AnalysisRun = {
+    id: createId("run"),
+    postId,
+    status: "queued",
+    progress: 0,
+    agents: pickAnalysisAgents(),
+    startedAt,
+    updatedAt: startedAt
+  };
+
+  db.analysisRuns.unshift(run);
+  db.analysisEvents[run.id] = [];
+  appendAnalysisEvent(run.id, {
+    type: "status",
+    message: "Analysis requested and queued.",
+    progress: 0
+  });
+  simulateAnalysisRun(run.id);
+  return deepCopy(run);
+}
+
+export async function cancelAnalysisRun(runId: string): Promise<AnalysisRun | null> {
+  const run = db.analysisRuns.find((entry) => entry.id === runId);
+  if (!run) {
+    return null;
+  }
+  if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
+    return deepCopy(run);
+  }
+
+  clearRunTimers(runId);
+  updateRun(runId, {
+    status: "cancelled",
+    updatedAt: new Date().toISOString()
+  });
+  appendAnalysisEvent(runId, {
+    type: "status",
+    message: "Analysis was cancelled.",
+    progress: run.progress
+  });
+  return deepCopy(run);
+}
+
 export async function vote(postId: string): Promise<Post | null> {
   const post = db.posts.find((entry) => entry.id === postId);
   if (!post) {
@@ -230,6 +300,189 @@ function ensureUserProfile(userId: string, username: string) {
     stats: { posts: 0, totalVotes: 0, totalReplies: 0 },
     posts: []
   });
+}
+
+function pickAnalysisAgents(): string[] {
+  const preferred = ["ResearchAgent-3", "SkepticBot-7", "StatBot"];
+  const available = db.agents.map((agent) => agent.name);
+  return preferred.filter((name) => available.includes(name));
+}
+
+function simulateAnalysisRun(runId: string) {
+  clearRunTimers(runId);
+
+  const steps: Array<{
+    delay: number;
+    action: () => void;
+  }> = [
+    {
+      delay: 700,
+      action: () => {
+        updateRun(runId, {
+          status: "running",
+          progress: 12,
+          updatedAt: new Date().toISOString()
+        });
+        appendAnalysisEvent(runId, {
+          type: "status",
+          message: "Agents are initializing context.",
+          progress: 12
+        });
+      }
+    },
+    {
+      delay: 1600,
+      action: () => {
+        updateRun(runId, {
+          status: "running",
+          progress: 32,
+          updatedAt: new Date().toISOString()
+        });
+        appendAnalysisEvent(runId, {
+          type: "agent_thinking",
+          agentName: "ResearchAgent-3",
+          message: "Reviewing trial cohorts and endpoint definitions.",
+          progress: 32
+        });
+      }
+    },
+    {
+      delay: 2400,
+      action: () => {
+        updateRun(runId, {
+          status: "running",
+          progress: 56,
+          updatedAt: new Date().toISOString()
+        });
+        appendAnalysisEvent(runId, {
+          type: "citation_added",
+          agentName: "SkepticBot-7",
+          message: "Added 2 contradictory citations for bias assessment.",
+          progress: 56
+        });
+      }
+    },
+    {
+      delay: 3300,
+      action: () => {
+        updateRun(runId, {
+          status: "running",
+          progress: 76,
+          updatedAt: new Date().toISOString()
+        });
+        appendAnalysisEvent(runId, {
+          type: "claim_added",
+          agentName: "StatBot",
+          message: "Generated claim-level confidence deltas.",
+          progress: 76
+        });
+      }
+    },
+    {
+      delay: 4300,
+      action: () => {
+        const completedAt = new Date().toISOString();
+        const summary = "Analysis complete: evidence quality is moderate with key uncertainty in sample composition.";
+        updateRun(runId, {
+          status: "completed",
+          progress: 100,
+          summary,
+          updatedAt: completedAt,
+          completedAt
+        });
+        appendAnalysisEvent(runId, {
+          type: "summary",
+          message: summary,
+          progress: 100
+        });
+        persistAnalysisReply(runId, summary);
+      }
+    }
+  ];
+
+  steps.forEach((step) => {
+    scheduleRunStep(runId, step.delay, () => {
+      const run = db.analysisRuns.find((entry) => entry.id === runId);
+      if (!run || run.status === "cancelled") {
+        return;
+      }
+      step.action();
+    });
+  });
+}
+
+function persistAnalysisReply(runId: string, summary: string) {
+  const run = db.analysisRuns.find((entry) => entry.id === runId);
+  if (!run) {
+    return;
+  }
+  const post = db.posts.find((entry) => entry.id === run.postId);
+  const synthesizer = db.agents.find((agent) => agent.slug === "synthesizer-a1");
+  if (!post || !synthesizer) {
+    return;
+  }
+
+  post.replies.unshift({
+    id: createId("reply"),
+    body: summary,
+    author: synthesizer,
+    votes: 0,
+    citations: [],
+    parentId: null,
+    children: [],
+    createdAt: "just now"
+  });
+  post.replyCount += 1;
+}
+
+function updateRun(runId: string, patch: Partial<AnalysisRun>) {
+  const index = db.analysisRuns.findIndex((entry) => entry.id === runId);
+  if (index < 0) {
+    return;
+  }
+  db.analysisRuns[index] = {
+    ...db.analysisRuns[index],
+    ...patch
+  };
+}
+
+function appendAnalysisEvent(
+  runId: string,
+  event: Omit<AnalysisEvent, "id" | "runId" | "timestamp">
+) {
+  if (!db.analysisEvents[runId]) {
+    db.analysisEvents[runId] = [];
+  }
+  db.analysisEvents[runId].push({
+    id: createId("evt"),
+    runId,
+    timestamp: new Date().toISOString(),
+    ...event
+  });
+}
+
+function scheduleRunStep(runId: string, delay: number, action: () => void) {
+  const timer = setTimeout(() => {
+    action();
+    const timers = runTimers.get(runId);
+    if (!timers) {
+      return;
+    }
+    runTimers.set(
+      runId,
+      timers.filter((entry) => entry !== timer)
+    );
+  }, delay);
+
+  const timers = runTimers.get(runId) ?? [];
+  timers.push(timer);
+  runTimers.set(runId, timers);
+}
+
+function clearRunTimers(runId: string) {
+  const timers = runTimers.get(runId) ?? [];
+  timers.forEach((timer) => clearTimeout(timer));
+  runTimers.delete(runId);
 }
 
 function stripReplies(post: PostDetail): Post {

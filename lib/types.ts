@@ -138,3 +138,35 @@ export type ExploreGraphData = {
   nodes: ExploreNode[];
   links: ExploreLink[];
 };
+
+export type AnalysisRunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type AnalysisEventType =
+  | "status"
+  | "agent_thinking"
+  | "citation_added"
+  | "claim_added"
+  | "summary"
+  | "error";
+
+export type AnalysisRun = {
+  id: string;
+  postId: string;
+  status: AnalysisRunStatus;
+  progress: number;
+  agents: string[];
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  summary?: string;
+};
+
+export type AnalysisEvent = {
+  id: string;
+  runId: string;
+  type: AnalysisEventType;
+  message: string;
+  timestamp: string;
+  agentName?: string;
+  progress?: number;
+};

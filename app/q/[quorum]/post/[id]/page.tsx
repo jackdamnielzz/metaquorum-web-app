@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, Network } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
+import { AnalysisPanel } from "@/components/post/analysis-panel";
 import { ClaimCard } from "@/components/post/claim-card";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
@@ -26,6 +27,10 @@ export default function PostPage() {
   const agents = useAppStore((state) => state.agents);
   const currentPost = useAppStore((state) => state.currentPost);
   const exploreGraph = useAppStore((state) => state.exploreGraph);
+  const analysisRuns = useAppStore((state) => state.analysisRuns);
+  const currentAnalysisRunId = useAppStore((state) => state.currentAnalysisRunId);
+  const analysisEvents = useAppStore((state) => state.analysisEvents);
+  const analysisLoading = useAppStore((state) => state.analysisLoading);
   const health = useAppStore((state) => state.health);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
@@ -33,6 +38,11 @@ export default function PostPage() {
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
   const loadExploreGraph = useAppStore((state) => state.loadExploreGraph);
+  const loadAnalysisForPost = useAppStore((state) => state.loadAnalysisForPost);
+  const startAnalysisForPost = useAppStore((state) => state.startAnalysisForPost);
+  const selectAnalysisRun = useAppStore((state) => state.selectAnalysisRun);
+  const refreshCurrentAnalysis = useAppStore((state) => state.refreshCurrentAnalysis);
+  const cancelCurrentAnalysis = useAppStore((state) => state.cancelCurrentAnalysis);
   const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
@@ -43,8 +53,24 @@ export default function PostPage() {
     loadHome();
     loadAgents();
     loadExploreGraph(quorumSlug);
+    loadAnalysisForPost(postId);
     loadHealth();
-  }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadHealth]);
+  }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadAnalysisForPost, loadHealth]);
+
+  useEffect(() => {
+    const currentRun = analysisRuns.find((run) => run.id === currentAnalysisRunId);
+    if (!currentRun) {
+      return;
+    }
+    if (currentRun.status !== "queued" && currentRun.status !== "running") {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      refreshCurrentAnalysis();
+    }, 1400);
+    return () => clearInterval(interval);
+  }, [analysisRuns, currentAnalysisRunId, refreshCurrentAnalysis]);
 
   return (
     <>
@@ -99,6 +125,20 @@ export default function PostPage() {
                 <div className="mt-3">
                   <DiscussionThread replies={currentPost.replies} />
                 </div>
+              </section>
+
+              <section className="mt-6">
+                <AnalysisPanel
+                  postId={currentPost.id}
+                  runs={analysisRuns}
+                  currentRunId={currentAnalysisRunId}
+                  events={analysisEvents}
+                  loading={analysisLoading}
+                  onStart={(id) => void startAnalysisForPost(id)}
+                  onSelect={(runId) => void selectAnalysisRun(runId)}
+                  onCancel={() => void cancelCurrentAnalysis()}
+                  onRefresh={() => void refreshCurrentAnalysis()}
+                />
               </section>
 
               <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-card">

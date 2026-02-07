@@ -2,6 +2,9 @@
 
 import { create } from "zustand";
 import {
+  cancelAnalysisRun,
+  fetchAnalysisEvents,
+  fetchAnalysisRun,
   fetchExploreGraph,
   fetchActivity,
   fetchAgent,
@@ -9,14 +12,18 @@ import {
   fetchAgents,
   fetchHealth,
   fetchLeaderboard,
+  fetchPostAnalysisRuns,
   fetchPost,
   fetchPosts,
   fetchQuorums,
   fetchUserProfile,
+  startAnalysisRun,
   submitPost,
   vote
 } from "@/lib/api";
 import {
+  AnalysisEvent,
+  AnalysisRun,
   ActivityItem,
   Agent,
   AgentActivity,
@@ -53,6 +60,10 @@ type AppStore = {
   currentUser: UserProfile | null;
   leaderboard: LeaderboardData | null;
   exploreGraph: ExploreGraphData | null;
+  analysisRuns: AnalysisRun[];
+  currentAnalysisRunId: string | null;
+  analysisEvents: AnalysisEvent[];
+  analysisLoading: boolean;
   health: { status: string; ok: boolean } | null;
   isLoading: boolean;
   error: string | null;
@@ -64,6 +75,11 @@ type AppStore = {
   loadUserProfile: (username: string) => Promise<void>;
   loadLeaderboard: (timeframe?: LeaderboardTimeframe) => Promise<void>;
   loadExploreGraph: (quorum?: string) => Promise<void>;
+  loadAnalysisForPost: (postId: string) => Promise<void>;
+  startAnalysisForPost: (postId: string) => Promise<AnalysisRun | null>;
+  selectAnalysisRun: (runId: string | null) => Promise<void>;
+  refreshCurrentAnalysis: () => Promise<void>;
+  cancelCurrentAnalysis: () => Promise<void>;
   loadHealth: () => Promise<void>;
   setSortMode: (sortMode: SortMode) => void;
   votePost: (postId: string) => Promise<void>;
@@ -83,6 +99,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentUser: null,
   leaderboard: null,
   exploreGraph: null,
+  analysisRuns: [],
+  currentAnalysisRunId: null,
+  analysisEvents: [],
+  analysisLoading: false,
   health: null,
   isLoading: false,
   error: null,
@@ -223,6 +243,108 @@ export const useAppStore = create<AppStore>((set, get) => ({
         error: error instanceof Error ? error.message : "Failed to load explore graph"
       });
     }
+  },
+
+  loadAnalysisForPost: async (postId) => {
+    set({ analysisLoading: true, error: null, analysisEvents: [] });
+    try {
+      const runs = await fetchPostAnalysisRuns(postId);
+      const currentRunId = runs[0]?.id ?? null;
+      const events = currentRunId ? await fetchAnalysisEvents(currentRunId) : [];
+      set({
+        analysisRuns: runs,
+        currentAnalysisRunId: currentRunId,
+        analysisEvents: events,
+        analysisLoading: false
+      });
+    } catch (error) {
+      set({
+        analysisLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load analysis runs"
+      });
+    }
+  },
+
+  startAnalysisForPost: async (postId) => {
+    set({ analysisLoading: true, error: null });
+    try {
+      const run = await startAnalysisRun(postId);
+      const runs = await fetchPostAnalysisRuns(postId);
+      const events = await fetchAnalysisEvents(run.id);
+      set({
+        analysisRuns: runs,
+        currentAnalysisRunId: run.id,
+        analysisEvents: events,
+        analysisLoading: false
+      });
+      return run;
+    } catch (error) {
+      set({
+        analysisLoading: false,
+        error: error instanceof Error ? error.message : "Failed to start analysis"
+      });
+      return null;
+    }
+  },
+
+  selectAnalysisRun: async (runId) => {
+    if (!runId) {
+      set({ currentAnalysisRunId: null, analysisEvents: [] });
+      return;
+    }
+    set({ analysisLoading: true });
+    try {
+      const events = await fetchAnalysisEvents(runId);
+      set({
+        currentAnalysisRunId: runId,
+        analysisEvents: events,
+        analysisLoading: false
+      });
+    } catch {
+      set({ analysisLoading: false });
+    }
+  },
+
+  refreshCurrentAnalysis: async () => {
+    const runId = get().currentAnalysisRunId;
+    if (!runId) {
+      return;
+    }
+    const run = await fetchAnalysisRun(runId);
+    if (!run) {
+      return;
+    }
+    const currentPostId = run.postId;
+    const currentPost = get().currentPost;
+    const [runs, events, refreshedPost] = await Promise.all([
+      fetchPostAnalysisRuns(currentPostId),
+      fetchAnalysisEvents(runId),
+      currentPost && currentPost.id === currentPostId ? fetchPost(currentPostId) : Promise.resolve(null)
+    ]);
+    set({
+      analysisRuns: runs,
+      analysisEvents: events,
+      currentPost: refreshedPost ?? currentPost
+    });
+  },
+
+  cancelCurrentAnalysis: async () => {
+    const runId = get().currentAnalysisRunId;
+    if (!runId) {
+      return;
+    }
+    const run = await cancelAnalysisRun(runId);
+    if (!run) {
+      return;
+    }
+    const [runs, events] = await Promise.all([
+      fetchPostAnalysisRuns(run.postId),
+      fetchAnalysisEvents(runId)
+    ]);
+    set({
+      analysisRuns: runs,
+      analysisEvents: events
+    });
   },
 
   loadHealth: async () => {
