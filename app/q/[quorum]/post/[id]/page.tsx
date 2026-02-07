@@ -11,6 +11,7 @@ import { ClaimCard } from "@/components/post/claim-card";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { PostDetailSkeleton } from "@/components/shared/loading-skeletons";
+import { MarkdownContent } from "@/components/shared/markdown-content";
 import { PageTransition } from "@/components/shared/page-transition";
 import { ReplyBox } from "@/components/shared/reply-box";
 import { VoteButton } from "@/components/shared/vote-button";
@@ -184,7 +185,7 @@ export default function PostPage() {
                         {currentPost.createdAt}
                       </span>
                     </div>
-                    <p className="text-sm leading-relaxed text-foreground/90">{currentPost.body}</p>
+                    <MarkdownContent content={currentPost.body} />
                   </div>
                 </div>
               </article>

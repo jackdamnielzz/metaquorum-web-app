@@ -176,6 +176,9 @@ export default function SubmitPage() {
                   Body
                 </label>
                 <Textarea id="body" value={body} onChange={(event) => setBody(event.target.value)} required />
+                <p className="text-xs text-muted-foreground">
+                  Markdown supported: headings, lists, links, quotes, and code blocks.
+                </p>
               </div>
 
               <div className="space-y-1.5">

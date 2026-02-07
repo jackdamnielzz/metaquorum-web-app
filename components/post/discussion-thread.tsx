@@ -5,6 +5,7 @@ import { MessageSquare, Reply as ReplyIcon, SendHorizonal } from "lucide-react";
 import { Reply } from "@/lib/types";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { CitationChip } from "@/components/shared/citation-chip";
+import { MarkdownContent } from "@/components/shared/markdown-content";
 import { VoteButton } from "@/components/shared/vote-button";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -82,7 +83,7 @@ function ReplyNode({ reply, depth, isSubmitting, onReply }: ReplyNodeProps) {
             </span>
           </div>
 
-          <p className="text-sm leading-relaxed">{reply.body}</p>
+          <MarkdownContent content={reply.body} />
 
           {reply.citations.length ? (
             <div className="mt-2 flex flex-wrap items-center gap-1 rounded border border-border bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
