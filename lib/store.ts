@@ -17,6 +17,7 @@ import {
   fetchPosts,
   fetchQuorums,
   fetchUserProfile,
+  isReadOnlyApp,
   startAnalysisRun,
   submitPost,
   submitReply,
@@ -281,6 +282,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   startAnalysisForPost: async (postId) => {
+    if (isReadOnlyApp()) {
+      return null;
+    }
+
     set({ analysisLoading: true, error: null });
     try {
       const run = await startAnalysisRun(postId);
@@ -344,6 +349,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   cancelCurrentAnalysis: async () => {
+    if (isReadOnlyApp()) {
+      return;
+    }
+
     const runId = get().currentAnalysisRunId;
     if (!runId) {
       return;
@@ -379,6 +388,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   votePost: async (postId) => {
+    if (isReadOnlyApp()) {
+      return;
+    }
+
     const updatedPost = await vote(postId);
     if (!updatedPost) {
       return;
@@ -396,6 +409,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   createPost: async (input) => {
+    if (isReadOnlyApp()) {
+      return null;
+    }
+
     try {
       const createdPost = await submitPost(input);
       const shouldInclude = get().selectedQuorum ? get().selectedQuorum === createdPost.quorum : true;
@@ -411,6 +428,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   submitReplyToCurrentPost: async (body, parentId = null) => {
+    if (isReadOnlyApp()) {
+      return false;
+    }
+
     const currentPost = get().currentPost;
     if (!currentPost || !body.trim()) {
       return false;

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { isReadOnlyApp } from "@/lib/api";
 import {
   DEFAULT_PROFILE_SETTINGS,
   loadProfileSettings,
@@ -29,6 +30,7 @@ const postTypes: Array<{ value: PostType; label: string }> = [
 export default function SubmitPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const readOnly = isReadOnlyApp();
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
@@ -90,6 +92,15 @@ export default function SubmitPage() {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (readOnly) {
+      toast({
+        title: "Read-only mode",
+        description: "Creating new threads is disabled in this frontend mode.",
+        variant: "error"
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     const created = await createPost({
       title,
@@ -128,6 +139,11 @@ export default function SubmitPage() {
           <section className="mx-auto max-w-2xl rounded-xl border border-border bg-card p-5 shadow-card">
             <h1 className="font-heading text-2xl font-semibold tracking-tight">New Post</h1>
             <p className="mt-1 text-sm text-muted-foreground">Create a thread for humans and agents to collaborate on.</p>
+            {readOnly ? (
+              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Read-only mode is active. Submitting new threads is disabled.
+              </p>
+            ) : null}
 
             <form className="mt-4 space-y-4" onSubmit={onSubmit}>
               <div className="space-y-1.5">
@@ -235,6 +251,7 @@ export default function SubmitPage() {
                     checked={requestAnalysis}
                     onChange={(event) => setRequestAnalysis(event.target.checked)}
                     className="h-4 w-4 accent-primary"
+                    disabled={readOnly}
                   />
                   Request agent analysis after submit
                 </label>
@@ -244,7 +261,7 @@ export default function SubmitPage() {
               </div>
 
               <div className="pt-2">
-                <Button type="submit" disabled={isSubmitting || !title.trim() || !body.trim()}>
+                <Button type="submit" disabled={readOnly || isSubmitting || !title.trim() || !body.trim()}>
                   {isSubmitting ? "Submitting..." : "Submit Post"}
                 </Button>
               </div>

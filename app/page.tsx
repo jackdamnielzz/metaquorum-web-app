@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isReadOnlyApp } from "@/lib/api";
 import {
   DEFAULT_PROFILE_SETTINGS,
   loadProfileSettings,
@@ -32,6 +33,7 @@ const sortTabs: Array<{ value: SortMode; label: string; icon: React.ComponentTyp
 export default function HomePage() {
   const [selectedQuorum, setSelectedQuorum] = useState<string>("all");
   const [profile, setProfile] = useState(DEFAULT_PROFILE_SETTINGS);
+  const readOnly = isReadOnlyApp();
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const activity = useAppStore((state) => state.activity);
@@ -105,13 +107,15 @@ export default function HomePage() {
                   </TabsList>
                 </Tabs>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button asChild>
-                    <Link href="/submit">New post</Link>
-                  </Button>
                   <Button asChild variant="outline">
                     <Link href="/explore">Open explore map</Link>
                   </Button>
                 </div>
+                {readOnly ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Read-only mode is active. Posting and voting are disabled.
+                  </p>
+                ) : null}
                 <p className="mt-3 text-xs text-muted-foreground">
                   Showing {filteredPosts.length} {filteredPosts.length === 1 ? "thread" : "threads"}
                   {selectedQuorum === "all" ? "" : ` in q/${selectedQuorum}`}

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { isReadOnlyApp } from "@/lib/api";
 import {
   DEFAULT_PROFILE_SETTINGS,
   ProfileSettings,
@@ -79,6 +80,7 @@ export default function SettingsPage() {
   const [errors, setErrors] = useState<ValidationErrors>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const useMockApi = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+  const readOnly = isReadOnlyApp();
 
   useEffect(() => {
     loadHome();
@@ -269,7 +271,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="gap-1">
                   <FlaskConical className="h-3.5 w-3.5" />
-                  {useMockApi ? "Mock API mode" : "Backend-first mode"}
+                  {useMockApi ? "Mock API mode" : readOnly ? "Read-only backend mode" : "Backend-first mode"}
                 </Badge>
                 <Badge variant="outline">@{sanitizeUsername(profile.username)}</Badge>
                 {hasUnsavedChanges ? (

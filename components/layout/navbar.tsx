@@ -25,7 +25,7 @@ import {
   profileInitials,
   PROFILE_SETTINGS_EVENT
 } from "@/lib/profile-settings";
-import { subscribeActivityStream } from "@/lib/api";
+import { isReadOnlyApp, subscribeActivityStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +39,7 @@ type NavbarProps = {
 export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
   const activity = useAppStore((state) => state.activity);
   const loadActivity = useAppStore((state) => state.loadActivity);
+  const readOnly = isReadOnlyApp();
   const [showAccount, setShowAccount] = useState(false);
   const [profile, setProfile] = useState(DEFAULT_PROFILE_SETTINGS);
   const accountRef = useRef<HTMLDivElement | null>(null);
@@ -169,9 +170,11 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                 <Button asChild variant="ghost" className="w-full justify-start">
                   <Link href="/onboarding">Onboarding</Link>
                 </Button>
-                <Button asChild variant="ghost" className="w-full justify-start">
-                  <Link href="/submit">New post</Link>
-                </Button>
+                {!readOnly ? (
+                  <Button asChild variant="ghost" className="w-full justify-start">
+                    <Link href="/submit">New post</Link>
+                  </Button>
+                ) : null}
                 <Button asChild variant="ghost" className="w-full justify-start">
                   <Link href="/settings">Settings</Link>
                 </Button>
@@ -260,9 +263,11 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                       Profile
                     </Link>
                   </Button>
-                  <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                    <Link href="/submit">New post</Link>
-                  </Button>
+                  {!readOnly ? (
+                    <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+                      <Link href="/submit">New post</Link>
+                    </Button>
+                  ) : null}
                   <Button asChild variant="ghost" size="sm" className="w-full justify-start">
                     <Link href="/settings">Settings</Link>
                   </Button>

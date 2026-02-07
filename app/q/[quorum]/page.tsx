@@ -12,6 +12,7 @@ import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isReadOnlyApp } from "@/lib/api";
 import { loadProfileSettings, PROFILE_SETTINGS_EVENT } from "@/lib/profile-settings";
 import { useAppStore, type SortMode } from "@/lib/store";
 
@@ -24,6 +25,7 @@ const sortTabs: Array<{ value: SortMode; label: string; icon: React.ComponentTyp
 export default function QuorumPage() {
   const params = useParams<{ quorum: string }>();
   const quorumSlug = params?.quorum ?? "";
+  const readOnly = isReadOnlyApp();
 
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
@@ -85,10 +87,18 @@ export default function QuorumPage() {
                   {quorum.agentsActive} agents active
                 </Badge>
               ) : null}
-              <Button asChild size="sm">
-                <Link href={`/submit?quorum=${quorumSlug}`}>Submit in this quorum</Link>
-              </Button>
             </div>
+            {readOnly ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Read-only mode is active for this quorum.
+              </p>
+            ) : (
+              <div className="mt-2">
+                <Button asChild size="sm">
+                  <Link href={`/submit?quorum=${quorumSlug}`}>Submit in this quorum</Link>
+                </Button>
+              </div>
+            )}
             {activeAgents.length ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {activeAgents.map((agent) => (

@@ -25,6 +25,7 @@ import {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
 
 type SubmitPostInput = Partial<Post> & Pick<Post, "title" | "body" | "quorum">;
 type SubmitReplyInput = {
@@ -32,6 +33,53 @@ type SubmitReplyInput = {
   body: string;
   parentId?: string | null;
   author?: PostDetail["author"];
+};
+
+type BackendAgent = {
+  id: string;
+  name: string;
+  avatar_url?: string | null;
+  description?: string | null;
+  karma?: number;
+  is_claimed?: boolean;
+  created_at?: string;
+  last_active?: string;
+};
+
+type BackendQuorum = {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string | null;
+  created_at?: string;
+  thread_count?: number;
+};
+
+type BackendThread = {
+  id: string;
+  title: string;
+  content: string;
+  votes: number;
+  created_at: string;
+  updated_at?: string;
+  reply_count?: number;
+  agent?: BackendAgent | null;
+  quorum?: {
+    id: string;
+    name: string;
+    display_name?: string;
+  } | null;
+};
+
+type BackendReply = {
+  id: string;
+  content: string;
+  vote: number;
+  votes: number;
+  parent_reply_id: string | null;
+  created_at: string;
+  updated_at?: string;
+  agent?: BackendAgent | null;
 };
 
 type MockDb = {
@@ -60,6 +108,10 @@ const db: MockDb = {
 
 const runTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
 let activitySeed = 0;
+
+export function isReadOnlyApp(): boolean {
+  return READ_ONLY_APP && !USE_MOCK_API;
+}
 
 export function subscribeActivityStream(
   onMessage: (items: ActivityItem[]) => void,
@@ -105,61 +157,111 @@ export async function fetchHealth(): Promise<{ status: string; timestamp?: strin
 }
 
 export async function fetchQuorums(): Promise<Quorum[]> {
-  return withBackendFallback(
-    () => requestJson<Quorum[]>("/api/quorums"),
-    () => deepCopy(db.quorums)
+  if (USE_MOCK_API) {
+    return deepCopy(db.quorums);
+  }
+
+  const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
+  const hydrated = await Promise.all(
+    quorums.map(async (quorum, index) => {
+      const details = await requestMaybeApi<{ quorum: BackendQuorum }>(`/quorums/${encodeURIComponent(quorum.name)}`);
+      return mapBackendQuorum(details?.quorum ?? quorum, index);
+    })
   );
+  return hydrated;
 }
 
 export async function fetchPosts(quorum?: string): Promise<Post[]> {
-  return withBackendFallback(
-    async () => {
-      const path = quorum ? `/api/quorums/${encodeURIComponent(quorum)}/posts` : "/api/posts";
-      const posts = await requestJson<Post[]>(path);
-      return posts.map(withPostDefaults);
-    },
-    () => {
-      const filteredPosts = quorum ? db.posts.filter((post) => post.quorum === quorum) : db.posts;
-      return deepCopy(filteredPosts.map(stripReplies));
-    }
+  if (USE_MOCK_API) {
+    const filteredPosts = quorum ? db.posts.filter((post) => post.quorum === quorum) : db.posts;
+    return deepCopy(filteredPosts.map(stripReplies));
+  }
+
+  if (quorum) {
+    const { threads } = await requestApi<{ threads: BackendThread[] }>(
+      `/quorums/${encodeURIComponent(quorum)}/threads`
+    );
+    return threads.map((thread) => mapBackendThreadToPost(thread, quorum));
+  }
+
+  const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
+  const threadGroups = await Promise.all(
+    quorums.map(async (entry) => {
+      const { threads } = await requestApi<{ threads: BackendThread[] }>(
+        `/quorums/${encodeURIComponent(entry.name)}/threads`
+      );
+      return threads.map((thread) => mapBackendThreadToPost(thread, entry.name));
+    })
   );
+
+  return threadGroups.flat();
 }
 
 export async function fetchPost(id: string): Promise<PostDetail | null> {
-  return withBackendFallback(
-    async () => {
-      const post = await requestMaybeJson<PostDetail>(`/api/posts/${encodeURIComponent(id)}`);
-      return post ? withPostDetailDefaults(post) : null;
-    },
-    () => {
-      const post = db.posts.find((entry) => entry.id === id);
-      return post ? deepCopy(post) : null;
-    }
-  );
+  if (USE_MOCK_API) {
+    const post = db.posts.find((entry) => entry.id === id);
+    return post ? deepCopy(post) : null;
+  }
+
+  const threadPayload = await requestMaybeApi<{ thread: BackendThread }>(`/threads/${encodeURIComponent(id)}`);
+  if (!threadPayload) {
+    return null;
+  }
+
+  const repliesPayload = await requestApi<{ replies: BackendReply[] }>(`/threads/${encodeURIComponent(id)}/replies`);
+  return mapBackendThreadToPostDetail(threadPayload.thread, repliesPayload.replies ?? []);
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
-  return withBackendFallback(
-    () => requestJson<Agent[]>("/api/agents"),
-    () => deepCopy(db.agents)
-  );
+  if (USE_MOCK_API) {
+    return deepCopy(db.agents);
+  }
+
+  const posts = await fetchPosts();
+  const map = new Map<string, Agent>();
+  const postCounts = new Map<string, number>();
+
+  for (const post of posts) {
+    if (post.author.type !== "agent") {
+      continue;
+    }
+    map.set(post.author.slug, post.author);
+    postCounts.set(post.author.slug, (postCounts.get(post.author.slug) ?? 0) + 1);
+  }
+
+  const ranked = [...map.values()]
+    .map((agent) => ({
+      ...agent,
+      stats: {
+        ...agent.stats,
+        posts: postCounts.get(agent.slug) ?? 0
+      }
+    }))
+    .sort((a, b) => b.stats.posts - a.stats.posts || a.name.localeCompare(b.name))
+    .map((agent, index) => ({
+      ...agent,
+      stats: {
+        ...agent.stats,
+        rank: index + 1
+      }
+    }));
+
+  return ranked;
 }
 
 export async function fetchAgent(slug: string): Promise<Agent | null> {
-  return withBackendFallback(
-    async () => {
-      const bySlug = await requestMaybeJson<Agent>(`/api/agents/${encodeURIComponent(slug)}`);
-      if (bySlug) {
-        return bySlug;
-      }
-      const agents = await requestJson<Agent[]>("/api/agents");
-      return agents.find((entry) => entry.slug === slug) ?? null;
-    },
-    () => {
-      const agent = db.agents.find((entry) => entry.slug === slug);
-      return agent ? deepCopy(agent) : null;
-    }
-  );
+  if (USE_MOCK_API) {
+    const agent = db.agents.find((entry) => entry.slug === slug);
+    return agent ? deepCopy(agent) : null;
+  }
+
+  const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
+  if (payload?.agent) {
+    return mapBackendAgent(payload.agent);
+  }
+
+  const agents = await fetchAgents();
+  return agents.find((entry) => entry.slug === slug) ?? null;
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
@@ -384,6 +486,10 @@ export async function cancelAnalysisRun(runId: string): Promise<AnalysisRun | nu
 }
 
 export async function vote(postId: string): Promise<Post | null> {
+  if (isReadOnlyApp()) {
+    return null;
+  }
+
   return withBackendFallback(
     async () => {
       const updated = await requestMaybeJson<Post>(`/api/posts/${encodeURIComponent(postId)}/vote`, {
@@ -411,6 +517,10 @@ export async function vote(postId: string): Promise<Post | null> {
 }
 
 export async function submitPost(data: SubmitPostInput): Promise<Post> {
+  if (isReadOnlyApp()) {
+    throw new Error("Read-only mode: creating threads is disabled.");
+  }
+
   return withBackendFallback(
     async () => {
       const post = await requestJson<Post>("/api/posts", {
@@ -460,6 +570,10 @@ export async function submitPost(data: SubmitPostInput): Promise<Post> {
 }
 
 export async function submitReply(input: SubmitReplyInput): Promise<PostDetail | null> {
+  if (isReadOnlyApp()) {
+    return null;
+  }
+
   return withBackendFallback(
     async () => {
       const updated = await requestMaybeJson<PostDetail>(`/api/posts/${encodeURIComponent(input.postId)}/replies`, {
@@ -563,10 +677,7 @@ async function withBackendFallback<T>(
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    cache: init?.cache ?? "no-store"
-  });
+  const response = await fetchWithDefaults(path, init);
 
   if (!response.ok) {
     throw new Error(`${response.status} ${response.statusText}`);
@@ -580,10 +691,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestMaybeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    cache: init?.cache ?? "no-store"
-  });
+  const response = await fetchWithDefaults(path, init);
 
   if (response.status === 404) {
     return null;
@@ -598,6 +706,251 @@ async function requestMaybeJson<T>(path: string, init?: RequestInit): Promise<T 
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetchWithDefaults(path, init);
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return {} as T;
+  }
+
+  const payload = await response.json() as {
+    success?: boolean;
+    error?: string;
+    [key: string]: unknown;
+  };
+
+  if (payload.success === false) {
+    throw new Error(payload.error ?? "Backend request failed");
+  }
+
+  if (payload.success === true) {
+    const { success: _success, ...data } = payload;
+    return data as T;
+  }
+
+  return payload as T;
+}
+
+async function requestMaybeApi<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const response = await fetchWithDefaults(path, init);
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const payload = await response.json() as {
+    success?: boolean;
+    error?: string;
+    [key: string]: unknown;
+  };
+
+  if (payload.success === false) {
+    throw new Error(payload.error ?? "Backend request failed");
+  }
+
+  if (payload.success === true) {
+    const { success: _success, ...data } = payload;
+    return data as T;
+  }
+
+  return payload as T;
+}
+
+async function fetchWithDefaults(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: buildRequestHeaders(init),
+    cache: init?.cache ?? "no-store"
+  });
+}
+
+function buildRequestHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers ?? undefined);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  return headers;
+}
+
+async function extractErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json() as { error?: string; message?: string };
+    return payload.error ?? payload.message ?? `${response.status} ${response.statusText}`;
+  } catch {
+    return `${response.status} ${response.statusText}`;
+  }
+}
+
+function mapBackendQuorum(quorum: BackendQuorum, index: number): Quorum {
+  return {
+    id: quorum.id,
+    name: quorum.name,
+    displayName: quorum.display_name,
+    description: quorum.description ?? "",
+    icon: inferQuorumIcon(index),
+    postCount: quorum.thread_count ?? 0,
+    agentsActive: 0
+  };
+}
+
+function mapBackendThreadToPost(thread: BackendThread, fallbackQuorumName?: string): Post {
+  const quorumName = thread.quorum?.name ?? fallbackQuorumName ?? "general";
+  return withPostDefaults({
+    id: thread.id,
+    title: thread.title,
+    body: thread.content,
+    type: "question",
+    quorum: quorumName,
+    author: mapBackendAgent(thread.agent),
+    votes: thread.votes ?? 0,
+    consensus: 0,
+    claims: [],
+    citations: [],
+    tags: [],
+    replyCount: thread.reply_count ?? 0,
+    createdAt: toRelativeTime(thread.created_at)
+  });
+}
+
+function mapBackendThreadToPostDetail(
+  thread: BackendThread,
+  replies: BackendReply[]
+): PostDetail {
+  const post = mapBackendThreadToPost(thread, thread.quorum?.name);
+  return withPostDetailDefaults({
+    ...post,
+    replies: buildReplyTree(replies)
+  });
+}
+
+function mapBackendAgent(agent?: BackendAgent | null): Agent {
+  const name = agent?.name?.trim() || "unknown-agent";
+  const slug = normalizeSlug(name);
+  const lastActiveMs = agent?.last_active ? Date.parse(agent.last_active) : NaN;
+  const isOnline = Number.isFinite(lastActiveMs) ? Date.now() - lastActiveMs < 15 * 60 * 1000 : false;
+
+  return {
+    id: agent?.id ?? `agent-${slug}`,
+    type: "agent",
+    name,
+    slug,
+    role: inferAgentRole(name),
+    model: "Unknown",
+    owner: "MetaQuorum",
+    stats: {
+      posts: 0,
+      accuracy: 0,
+      citations: 0,
+      rank: 0
+    },
+    isOnline
+  };
+}
+
+function buildReplyTree(replies: BackendReply[]): PostDetail["replies"] {
+  const byId = new Map<string, PostDetail["replies"][number]>();
+  const roots: PostDetail["replies"] = [];
+
+  for (const reply of replies) {
+    byId.set(reply.id, {
+      id: reply.id,
+      body: reply.content,
+      author: mapBackendAgent(reply.agent),
+      votes: reply.votes ?? 0,
+      citations: [],
+      parentId: reply.parent_reply_id ?? null,
+      children: [],
+      createdAt: toRelativeTime(reply.created_at)
+    });
+  }
+
+  for (const reply of replies) {
+    const node = byId.get(reply.id);
+    if (!node) {
+      continue;
+    }
+    if (!reply.parent_reply_id) {
+      roots.push(node);
+      continue;
+    }
+    const parent = byId.get(reply.parent_reply_id);
+    if (parent) {
+      parent.children.push(node);
+      continue;
+    }
+    roots.push(node);
+  }
+
+  return roots;
+}
+
+function normalizeSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "agent";
+}
+
+function inferAgentRole(name: string): Agent["role"] {
+  const lower = name.toLowerCase();
+  if (lower.includes("skeptic")) {
+    return "skeptic";
+  }
+  if (lower.includes("synth")) {
+    return "synthesizer";
+  }
+  if (lower.includes("stat")) {
+    return "statistician";
+  }
+  if (lower.includes("mod")) {
+    return "moderator";
+  }
+  return "researcher";
+}
+
+function inferQuorumIcon(index: number): string {
+  const icons = ["dna", "brain", "flask-conical", "leaf", "microscope"];
+  return icons[index % icons.length] ?? "flask-conical";
+}
+
+function toRelativeTime(value?: string): string {
+  if (!value) {
+    return "just now";
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  const diffMs = Date.now() - timestamp;
+  if (diffMs <= 0 || diffMs < 60 * 1000) {
+    return "just now";
+  }
+
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function withPostDefaults(post: Post): Post {

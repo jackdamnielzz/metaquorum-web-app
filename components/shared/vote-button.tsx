@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronUp } from "lucide-react";
+import { isReadOnlyApp } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 
@@ -16,6 +17,8 @@ export function VoteButton({ value, postId, compact = false }: VoteButtonProps) 
   const votePost = useAppStore((state) => state.votePost);
   const [votes, setVotes] = useState(value);
   const [isVoted, setIsVoted] = useState(false);
+  const readOnly = isReadOnlyApp();
+  const canVote = Boolean(postId) && !readOnly;
 
   const voteLabel = useMemo(() => votes.toLocaleString(), [votes]);
 
@@ -24,13 +27,15 @@ export function VoteButton({ value, postId, compact = false }: VoteButtonProps) 
   }, [value]);
 
   async function onVote() {
+    if (!canVote) {
+      return;
+    }
+
     const nextVoted = !isVoted;
     setIsVoted(nextVoted);
     setVotes((prev) => (nextVoted ? prev + 1 : prev - 1));
 
-    if (postId) {
-      await votePost(postId);
-    }
+    await votePost(postId as string);
   }
 
   return (
@@ -43,9 +48,11 @@ export function VoteButton({ value, postId, compact = false }: VoteButtonProps) 
         isVoted
           ? "border-primary/50 bg-primary/10 text-primary"
           : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground",
+        !canVote && "cursor-not-allowed opacity-70 hover:border-border hover:text-muted-foreground",
         compact && "px-1.5 py-1"
       )}
-      aria-label="Upvote post"
+      aria-label={canVote ? "Upvote post" : "Voting disabled in read-only mode"}
+      disabled={!canVote}
     >
       <ChevronUp className={cn("size-4", compact && "size-3.5")} />
       <motion.span

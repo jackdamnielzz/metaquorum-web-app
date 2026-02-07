@@ -15,7 +15,7 @@ import { PageTransition } from "@/components/shared/page-transition";
 import { ReplyBox } from "@/components/shared/reply-box";
 import { VoteButton } from "@/components/shared/vote-button";
 import { Button } from "@/components/ui/button";
-import { subscribeAnalysisEventsStream } from "@/lib/api";
+import { isReadOnlyApp, subscribeAnalysisEventsStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/lib/toast-store";
 
@@ -25,6 +25,7 @@ export default function PostPage() {
   const quorumSlug = params?.quorum ?? "";
   const postId = params?.id ?? "";
   const shouldAutoAnalyze = searchParams.get("analyze") === "1";
+  const readOnly = isReadOnlyApp();
   const [showGraph, setShowGraph] = useState(false);
   const autoAnalyzeHandledRef = useRef(false);
   const { toast } = useToast();
@@ -62,16 +63,18 @@ export default function PostPage() {
     loadHome();
     loadAgents();
     loadExploreGraph(quorumSlug);
-    loadAnalysisForPost(postId);
+    if (!readOnly) {
+      loadAnalysisForPost(postId);
+    }
     loadHealth();
-  }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadAnalysisForPost, loadHealth]);
+  }, [postId, quorumSlug, readOnly, loadPost, loadHome, loadAgents, loadExploreGraph, loadAnalysisForPost, loadHealth]);
 
   useEffect(() => {
     autoAnalyzeHandledRef.current = false;
   }, [postId]);
 
   useEffect(() => {
-    if (!shouldAutoAnalyze || !currentPost || autoAnalyzeHandledRef.current || analysisRuns.length > 0) {
+    if (readOnly || !shouldAutoAnalyze || !currentPost || autoAnalyzeHandledRef.current || analysisRuns.length > 0) {
       return;
     }
     autoAnalyzeHandledRef.current = true;
@@ -91,9 +94,13 @@ export default function PostPage() {
         variant: "error"
       });
     })();
-  }, [shouldAutoAnalyze, currentPost, analysisRuns.length, startAnalysisForPost, toast]);
+  }, [readOnly, shouldAutoAnalyze, currentPost, analysisRuns.length, startAnalysisForPost, toast]);
 
   useEffect(() => {
+    if (readOnly) {
+      return;
+    }
+
     const currentRun = analysisRuns.find((run) => run.id === currentAnalysisRunId);
     if (!currentRun) {
       return;
@@ -143,7 +150,7 @@ export default function PostPage() {
       streamCleanup?.();
       stopPolling();
     };
-  }, [analysisRuns, currentAnalysisRunId, refreshCurrentAnalysis]);
+  }, [readOnly, analysisRuns, currentAnalysisRunId, refreshCurrentAnalysis]);
 
   return (
     <>
@@ -195,11 +202,16 @@ export default function PostPage() {
 
               <section className="mt-6">
                 <h2 className="font-heading text-lg font-semibold">Discussion</h2>
+                {readOnly ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Read-only mode is active. Replying is disabled.
+                  </p>
+                ) : null}
                 <div className="mt-3">
                   <DiscussionThread
                     replies={currentPost.replies}
                     isSubmitting={replySubmitting}
-                    onReply={async (body, parentId) => {
+                    onReply={readOnly ? undefined : async (body, parentId) => {
                       const ok = await submitReplyToCurrentPost(body, parentId);
                       if (ok) {
                         toast({
@@ -220,44 +232,46 @@ export default function PostPage() {
                 </div>
               </section>
 
-              <section className="mt-6">
-                <AnalysisPanel
-                  postId={currentPost.id}
-                  runs={analysisRuns}
-                  currentRunId={currentAnalysisRunId}
-                  events={analysisEvents}
-                  loading={analysisLoading}
-                  onStart={(id) => {
-                    void (async () => {
-                      const run = await startAnalysisForPost(id);
-                      if (run) {
+              {!readOnly ? (
+                <section className="mt-6">
+                  <AnalysisPanel
+                    postId={currentPost.id}
+                    runs={analysisRuns}
+                    currentRunId={currentAnalysisRunId}
+                    events={analysisEvents}
+                    loading={analysisLoading}
+                    onStart={(id) => {
+                      void (async () => {
+                        const run = await startAnalysisForPost(id);
+                        if (run) {
+                          toast({
+                            title: "Analysis started",
+                            description: `Run ${run.id} is now ${run.status}.`,
+                            variant: "success"
+                          });
+                          return;
+                        }
                         toast({
-                          title: "Analysis started",
-                          description: `Run ${run.id} is now ${run.status}.`,
-                          variant: "success"
+                          title: "Analysis failed to start",
+                          description: "Please try again.",
+                          variant: "error"
                         });
-                        return;
-                      }
-                      toast({
-                        title: "Analysis failed to start",
-                        description: "Please try again.",
-                        variant: "error"
-                      });
-                    })();
-                  }}
-                  onSelect={(runId) => void selectAnalysisRun(runId)}
-                  onCancel={() => {
-                    void (async () => {
-                      await cancelCurrentAnalysis();
-                      toast({
-                        title: "Analysis cancelled",
-                        description: "Current run has been cancelled."
-                      });
-                    })();
-                  }}
-                  onRefresh={() => void refreshCurrentAnalysis()}
-                />
-              </section>
+                      })();
+                    }}
+                    onSelect={(runId) => void selectAnalysisRun(runId)}
+                    onCancel={() => {
+                      void (async () => {
+                        await cancelCurrentAnalysis();
+                        toast({
+                          title: "Analysis cancelled",
+                          description: "Current run has been cancelled."
+                        });
+                      })();
+                    }}
+                    onRefresh={() => void refreshCurrentAnalysis()}
+                  />
+                </section>
+              ) : null}
 
               <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-card">
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -270,28 +284,30 @@ export default function PostPage() {
                 {showGraph && exploreGraph ? <KnowledgeGraph data={exploreGraph} /> : null}
               </section>
 
-              <section className="mt-4">
-                <ReplyBox
-                  isSubmitting={replySubmitting}
-                  onSubmitReply={async (body) => {
-                    const ok = await submitReplyToCurrentPost(body);
-                    if (ok) {
+              {!readOnly ? (
+                <section className="mt-4">
+                  <ReplyBox
+                    isSubmitting={replySubmitting}
+                    onSubmitReply={async (body) => {
+                      const ok = await submitReplyToCurrentPost(body);
+                      if (ok) {
+                        toast({
+                          title: "Reply posted",
+                          description: "Your reply is now visible in the thread.",
+                          variant: "success"
+                        });
+                        return true;
+                      }
                       toast({
-                        title: "Reply posted",
-                        description: "Your reply is now visible in the thread.",
-                        variant: "success"
+                        title: "Could not post reply",
+                        description: "Please try again.",
+                        variant: "error"
                       });
-                      return true;
-                    }
-                    toast({
-                      title: "Could not post reply",
-                      description: "Please try again.",
-                      variant: "error"
-                    });
-                    return false;
-                  }}
-                />
-              </section>
+                      return false;
+                    }}
+                  />
+                </section>
+              ) : null}
             </>
           ) : null}
         </main>
