@@ -25,6 +25,8 @@ type MonthLabel = {
 
 type HeatmapSummary = {
   total: number;
+  activeDays: number;
+  avgPerWeek: number;
   currentStreak: number;
   bestStreak: number;
   peak: number;
@@ -34,24 +36,47 @@ const DAY_LABELS = ["Mon", "Wed", "Fri"];
 
 export function Heatmap({ seed, activity = [], weeks = 28 }: HeatmapProps) {
   const [hovered, setHovered] = useState<HeatmapCell | null>(null);
+  const [selectedWeeks, setSelectedWeeks] = useState(weeks);
 
   const { cells, monthLabels, summary } = useMemo(
-    () => buildHeatmap(seed, activity, weeks),
-    [seed, activity, weeks]
+    () => buildHeatmap(seed, activity, selectedWeeks),
+    [seed, activity, selectedWeeks]
   );
 
   const groupedByColumn = useMemo(() => {
-    const cols = Array.from({ length: weeks }, () => [] as HeatmapCell[]);
+    const cols = Array.from({ length: selectedWeeks }, () => [] as HeatmapCell[]);
     for (const cell of cells) {
       cols[cell.col].push(cell);
     }
     return cols;
-  }, [cells, weeks]);
+  }, [cells, selectedWeeks]);
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-md border border-border bg-muted/20 p-1">
+          {[12, 30, 52].map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setSelectedWeeks(option)}
+              className={`rounded px-2 py-1 text-xs transition ${
+                selectedWeeks === option
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {option}w
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">Window: last {selectedWeeks} weeks</p>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard label="Total activity" value={summary.total} />
+        <MetricCard label="Active days" value={summary.activeDays} />
+        <MetricCard label="Avg/week" value={summary.avgPerWeek} />
         <MetricCard label="Current streak" value={summary.currentStreak} suffix="d" />
         <MetricCard label="Best streak" value={summary.bestStreak} suffix="d" />
         <MetricCard label="Peak day" value={summary.peak} />
@@ -146,6 +171,7 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
   let bestStreak = 0;
   let runningStreak = 0;
   let peak = 0;
+  let activeDays = 0;
 
   for (let col = 0; col < weeks; col += 1) {
     const weekStart = addDays(firstSunday, col * 7);
@@ -165,6 +191,7 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
         peak = Math.max(peak, value);
 
         if (value > 0) {
+          activeDays += 1;
           runningStreak += 1;
           bestStreak = Math.max(bestStreak, runningStreak);
         } else {
@@ -187,7 +214,14 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
   return {
     cells,
     monthLabels: buildMonthLabels(cells),
-    summary: { total, currentStreak, bestStreak, peak }
+    summary: {
+      total,
+      activeDays,
+      avgPerWeek: Number((total / Math.max(1, weeks)).toFixed(1)),
+      currentStreak,
+      bestStreak,
+      peak
+    }
   };
 }
 
@@ -319,7 +353,7 @@ function formatDate(date: Date): string {
   });
 }
 
-function MetricCard({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
+function MetricCard({ label, value, suffix = "" }: { label: string; value: number | string; suffix?: string }) {
   return (
     <div className="rounded-md border border-border bg-muted/30 px-2 py-2">
       <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
