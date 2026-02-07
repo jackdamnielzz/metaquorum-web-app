@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, X } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -35,7 +37,9 @@ export default function SubmitPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [type, setType] = useState<PostType>("question");
-  const [tagsInput, setTagsInput] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [requestAnalysis, setRequestAnalysis] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -51,13 +55,26 @@ export default function SubmitPage() {
     }
   }, []);
 
+  function normalizeTag(value: string): string {
+    return value.trim().toLowerCase().replace(/\s+/g, "-");
+  }
+
+  function addTag(raw: string) {
+    const tag = normalizeTag(raw);
+    if (!tag) {
+      return;
+    }
+    setTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    setTagDraft("");
+  }
+
+  function removeTag(tag: string) {
+    setTags((prev) => prev.filter((item) => item !== tag));
+  }
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
-    const tags = tagsInput
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
     const created = await createPost({
       title,
       body,
@@ -72,7 +89,7 @@ export default function SubmitPage() {
         description: `Thread created in q/${created.quorum}.`,
         variant: "success"
       });
-      router.push(`/q/${created.quorum}/post/${created.id}`);
+      router.push(`/q/${created.quorum}/post/${created.id}${requestAnalysis ? "?analyze=1" : ""}`);
       return;
     }
     toast({
@@ -143,15 +160,66 @@ export default function SubmitPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium" htmlFor="tags">
-                  Tags (comma separated)
+                <label className="text-sm font-medium" htmlFor="tags-input">
+                  Tags
                 </label>
-                <Input
-                  id="tags"
-                  value={tagsInput}
-                  onChange={(event) => setTagsInput(event.target.value)}
-                  placeholder="rapamycin, mTOR"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="tags-input"
+                    value={tagDraft}
+                    onChange={(event) => setTagDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === ",") {
+                        event.preventDefault();
+                        addTag(tagDraft);
+                      }
+                    }}
+                    placeholder="Add a tag and press Enter"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => addTag(tagDraft)}
+                    aria-label="Add tag"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {tags.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((tag) => (
+                      <Badge key={tag} variant="outline" className="gap-1 bg-muted/40 pr-1">
+                        {tag}
+                        <button
+                          type="button"
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() => removeTag(tag)}
+                          aria-label={`Remove ${tag}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No tags yet.</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border bg-muted/25 p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={requestAnalysis}
+                    onChange={(event) => setRequestAnalysis(event.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Request agent analysis after submit
+                </label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Starts a mock analysis run automatically on the new thread.
+                </p>
               </div>
 
               <div className="pt-2">

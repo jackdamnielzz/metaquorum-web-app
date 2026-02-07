@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Network } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
@@ -20,9 +20,12 @@ import { useToast } from "@/lib/toast-store";
 
 export default function PostPage() {
   const params = useParams<{ quorum: string; id: string }>();
+  const searchParams = useSearchParams();
   const quorumSlug = params?.quorum ?? "";
   const postId = params?.id ?? "";
+  const shouldAutoAnalyze = searchParams.get("analyze") === "1";
   const [showGraph, setShowGraph] = useState(false);
+  const autoAnalyzeHandledRef = useRef(false);
   const { toast } = useToast();
 
   const quorums = useAppStore((state) => state.quorums);
@@ -61,6 +64,33 @@ export default function PostPage() {
     loadAnalysisForPost(postId);
     loadHealth();
   }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadAnalysisForPost, loadHealth]);
+
+  useEffect(() => {
+    autoAnalyzeHandledRef.current = false;
+  }, [postId]);
+
+  useEffect(() => {
+    if (!shouldAutoAnalyze || !currentPost || autoAnalyzeHandledRef.current || analysisRuns.length > 0) {
+      return;
+    }
+    autoAnalyzeHandledRef.current = true;
+    void (async () => {
+      const run = await startAnalysisForPost(currentPost.id);
+      if (run) {
+        toast({
+          title: "Analysis started",
+          description: `Run ${run.id} is now ${run.status}.`,
+          variant: "success"
+        });
+        return;
+      }
+      toast({
+        title: "Analysis failed to start",
+        description: "Please try again.",
+        variant: "error"
+      });
+    })();
+  }, [shouldAutoAnalyze, currentPost, analysisRuns.length, startAnalysisForPost, toast]);
 
   useEffect(() => {
     const currentRun = analysisRuns.find((run) => run.id === currentAnalysisRunId);

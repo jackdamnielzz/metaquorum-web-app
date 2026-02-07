@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Flame, Sparkles, TrendingUp } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
@@ -20,6 +20,7 @@ const sortTabs: Array<{ value: SortMode; label: string; icon: React.ComponentTyp
 ];
 
 export default function HomePage() {
+  const [selectedQuorum, setSelectedQuorum] = useState<string>("all");
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const activity = useAppStore((state) => state.activity);
@@ -39,6 +40,11 @@ export default function HomePage() {
     loadHealth();
   }, [loadHome, loadAgents, loadHealth]);
 
+  const filteredPosts = useMemo(
+    () => (selectedQuorum === "all" ? posts : posts.filter((post) => post.quorum === selectedQuorum)),
+    [posts, selectedQuorum]
+  );
+
   return (
     <>
       <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
@@ -48,8 +54,18 @@ export default function HomePage() {
             <div className="space-y-4">
               <section className="rounded-xl border border-border bg-card p-4 shadow-card">
                 <div className="flex flex-wrap items-center gap-2">
+                  <QuorumChip
+                    label="All Quorums"
+                    active={selectedQuorum === "all"}
+                    onSelect={() => setSelectedQuorum("all")}
+                  />
                   {quorums.map((quorum) => (
-                    <QuorumChip key={quorum.id} label={quorum.displayName} href={`/q/${quorum.name}`} />
+                    <QuorumChip
+                      key={quorum.id}
+                      label={quorum.displayName}
+                      active={selectedQuorum === quorum.name}
+                      onSelect={() => setSelectedQuorum(quorum.name)}
+                    />
                   ))}
                 </div>
                 <Tabs
@@ -74,12 +90,16 @@ export default function HomePage() {
                     <Link href="/explore">Open explore map</Link>
                   </Button>
                 </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Showing {filteredPosts.length} {filteredPosts.length === 1 ? "thread" : "threads"}
+                  {selectedQuorum === "all" ? "" : ` in q/${selectedQuorum}`}
+                </p>
               </section>
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               {isLoading && !posts.length ? <FeedSkeleton count={4} /> : null}
               <section className="space-y-3">
-                {posts.map((post) => (
+                {filteredPosts.map((post) => (
                   <PostCard key={post.id} post={post} showQuorum />
                 ))}
               </section>

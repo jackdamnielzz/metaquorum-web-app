@@ -24,11 +24,12 @@ type CommandSearchProps = {
 
 export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
   const [open, setOpen] = useState(false);
+  const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
   const router = useRouter();
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if ((event.key === "k" && (event.metaKey || event.ctrlKey)) || event.key === "K") {
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setOpen((prev) => !prev);
       }
@@ -36,6 +37,12 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
 
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
+  }, []);
+
+  useEffect(() => {
+    if (navigator.platform.toLowerCase().includes("mac")) {
+      setShortcutLabel("⌘K");
+    }
   }, []);
 
   function navigate(path: string) {
@@ -49,7 +56,7 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
         <Button variant="outline" className="h-10 gap-2 text-muted-foreground">
           <Search className="h-4 w-4" />
           <span className="hidden sm:inline">Search</span>
-          <CommandShortcut className="hidden sm:inline">Ctrl+K</CommandShortcut>
+          <CommandShortcut className="hidden sm:inline">{shortcutLabel}</CommandShortcut>
         </Button>
       </DialogTrigger>
       <DialogContent className="p-0">
