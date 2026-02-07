@@ -155,7 +155,7 @@ export function Heatmap({ seed, activity = [], weeks = 28 }: HeatmapProps) {
   );
 }
 
-function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
+function buildHeatmap(_seed: string, activity: AgentActivity[], weeks: number): {
   cells: HeatmapCell[];
   monthLabels: MonthLabel[];
   summary: HeatmapSummary;
@@ -164,7 +164,7 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
   const lastSunday = addDays(now, -now.getDay());
   const firstSunday = addDays(lastSunday, -(weeks - 1) * 7);
 
-  const activityBoosts = buildActivityBoostMap(activity, now);
+  const activityByDate = buildActivityCountMap(activity, now);
   const cells: HeatmapCell[] = [];
   let total = 0;
   let currentStreak = 0;
@@ -179,10 +179,7 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
       const date = addDays(weekStart, row);
       const dateKey = toDateKey(date);
       const isFuture = date.getTime() > now.getTime();
-      const weekdayWeight = row === 0 || row === 6 ? 0.8 : 1;
-      const base = isFuture ? 0 : seededValue(seed, dateKey, weekdayWeight);
-      const boost = isFuture ? 0 : activityBoosts.get(dateKey) ?? 0;
-      const value = clamp(base + boost, 0, 4);
+      const value = isFuture ? 0 : clamp(activityByDate.get(dateKey) ?? 0, 0, 4);
 
       cells.push({ date, dateKey, value, col, row, isFuture });
 
@@ -225,19 +222,18 @@ function buildHeatmap(seed: string, activity: AgentActivity[], weeks: number): {
   };
 }
 
-function buildActivityBoostMap(activity: AgentActivity[], now: Date): Map<string, number> {
-  const boost = new Map<string, number>();
-  activity.forEach((item, index) => {
-    const eventDate = parseRelativeTimestamp(item.timestamp, now);
+function buildActivityCountMap(activity: AgentActivity[], now: Date): Map<string, number> {
+  const byDate = new Map<string, number>();
+  activity.forEach((item) => {
+    const eventDate = parseActivityTimestamp(item.timestamp, now);
     if (!eventDate) {
       return;
     }
     const key = toDateKey(eventDate);
-    const previous = boost.get(key) ?? 0;
-    const amount = Math.max(1, 3 - index);
-    boost.set(key, previous + amount);
+    const previous = byDate.get(key) ?? 0;
+    byDate.set(key, previous + 1);
   });
-  return boost;
+  return byDate;
 }
 
 function buildMonthLabels(cells: HeatmapCell[]): MonthLabel[] {
@@ -259,25 +255,12 @@ function buildMonthLabels(cells: HeatmapCell[]): MonthLabel[] {
   return labels;
 }
 
-function seededValue(seed: string, key: string, weight = 1): number {
-  const value = stableHash(`${seed}:${key}`) % 100;
-  let score = 0;
-  if (value >= 50) {
-    score = 1;
+function parseActivityTimestamp(value: string, now: Date): Date | null {
+  const isoTime = Date.parse(value);
+  if (Number.isFinite(isoTime)) {
+    return startOfDay(new Date(isoTime));
   }
-  if (value >= 72) {
-    score = 2;
-  }
-  if (value >= 88) {
-    score = 3;
-  }
-  if (value >= 96) {
-    score = 4;
-  }
-  return Math.round(score * weight);
-}
 
-function parseRelativeTimestamp(value: string, now: Date): Date | null {
   const text = value.toLowerCase().trim();
   const match = text.match(/(\d+)\s*([mhdw])/);
   if (!match) {
@@ -313,15 +296,6 @@ function colorForLevel(level: number): string {
     return "bg-emerald-400";
   }
   return "bg-emerald-600";
-}
-
-function stableHash(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
 }
 
 function toDateKey(date: Date): string {

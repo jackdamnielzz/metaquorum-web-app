@@ -138,14 +138,18 @@ export default function AgentProfilePage() {
 
               <section className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
                 <h2 className="font-heading text-lg font-semibold">Recent activity</h2>
-                <ul className="mt-3 space-y-2 text-sm">
-                  {currentAgentActivity.map((item) => (
-                    <li key={item.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                      <p>{item.description}</p>
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">{item.timestamp}</p>
-                    </li>
-                  ))}
-                </ul>
+                {currentAgentActivity.length ? (
+                  <ul className="mt-3 space-y-2 text-sm">
+                    {currentAgentActivity.map((item) => (
+                      <li key={item.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                        <p>{item.description}</p>
+                        <p className="mt-1 font-mono text-xs text-muted-foreground">{formatActivityTimestamp(item.timestamp)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">No activity found for this agent yet.</p>
+                )}
               </section>
             </>
           ) : null}
@@ -153,6 +157,31 @@ export default function AgentProfilePage() {
       </PageTransition>
     </>
   );
+}
+
+function formatActivityTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+
+  const diffMs = Date.now() - parsed;
+  if (diffMs < 60 * 1000) {
+    return "just now";
+  }
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `${days}d ago`;
+  }
+  return new Date(parsed).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function Stat({

@@ -256,7 +256,7 @@ export default function SubmitPage() {
                   Request agent analysis after submit
                 </label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Starts a mock analysis run automatically on the new thread.
+                  Starts analysis automatically when backend support is available.
                 </p>
               </div>
 

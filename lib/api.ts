@@ -14,14 +14,6 @@ import {
   Quorum,
   UserProfile
 } from "@/lib/types";
-import {
-  mockActivityFeed,
-  mockAgentActivity,
-  mockAgents,
-  mockPosts,
-  mockQuorums,
-  mockUsers
-} from "@/lib/mock-data";
 
 const DEFAULT_LOCAL_API_BASE = "http://localhost:3000";
 const DEFAULT_PROD_API_BASE = "https://api.metaquorum.com";
@@ -30,7 +22,6 @@ const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
 const ENABLE_LEGACY_ACTIVITY_API = process.env.NEXT_PUBLIC_ENABLE_LEGACY_ACTIVITY_API === "true";
 
 export const API_BASE = resolveApiBase();
-const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
 let warnedLocalApiInRemoteRuntime = false;
 
@@ -89,74 +80,33 @@ type BackendReply = {
   agent?: BackendAgent | null;
 };
 
-type MockDb = {
-  quorums: Quorum[];
-  agents: Agent[];
-  posts: PostDetail[];
-  activity: ActivityItem[];
-  agentActivity: Record<string, AgentActivity[]>;
-  users: UserProfile[];
-  analysisRuns: AnalysisRun[];
-  analysisEvents: Record<string, AnalysisEvent[]>;
-  votedPostIds: Set<string>;
+type AgentActivityInternal = {
+  id: string;
+  description: string;
+  timestamp: string;
+  createdAtMs: number;
 };
-
-const db: MockDb = {
-  quorums: deepCopy(mockQuorums),
-  agents: deepCopy(mockAgents),
-  posts: deepCopy(mockPosts),
-  activity: deepCopy(mockActivityFeed),
-  agentActivity: deepCopy(mockAgentActivity),
-  users: deepCopy(mockUsers),
-  analysisRuns: [],
-  analysisEvents: {},
-  votedPostIds: new Set<string>()
-};
-
-const runTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
-let activitySeed = 0;
 
 export function isReadOnlyApp(): boolean {
-  return READ_ONLY_APP && !USE_MOCK_API;
+  return READ_ONLY_APP;
 }
 
 export function subscribeActivityStream(
-  onMessage: (items: ActivityItem[]) => void,
-  onError?: (error?: unknown) => void
+  _onMessage: (items: ActivityItem[]) => void,
+  _onError?: (error?: unknown) => void
 ): (() => void) | null {
   if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
     return null;
   }
-
-  return createEventSourceStream("/api/activity/stream", (payload) => {
-    if (Array.isArray(payload)) {
-      onMessage(payload as ActivityItem[]);
-      return;
-    }
-    if (payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)) {
-      onMessage((payload as { items: ActivityItem[] }).items);
-      return;
-    }
-    onMessage([payload as ActivityItem]);
-  }, onError);
+  return null;
 }
 
 export function subscribeAnalysisEventsStream(
-  runId: string,
-  onMessage: (events: AnalysisEvent[]) => void,
-  onError?: (error?: unknown) => void
+  _runId: string,
+  _onMessage: (events: AnalysisEvent[]) => void,
+  _onError?: (error?: unknown) => void
 ): (() => void) | null {
-  return createEventSourceStream(`/api/analyze/runs/${encodeURIComponent(runId)}/events/stream`, (payload) => {
-    if (Array.isArray(payload)) {
-      onMessage(payload as AnalysisEvent[]);
-      return;
-    }
-    if (payload && typeof payload === "object" && Array.isArray((payload as { events?: unknown }).events)) {
-      onMessage((payload as { events: AnalysisEvent[] }).events);
-      return;
-    }
-    onMessage([payload as AnalysisEvent]);
-  }, onError);
+  return null;
 }
 
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
@@ -164,10 +114,6 @@ export async function fetchHealth(): Promise<{ status: string; timestamp?: strin
 }
 
 export async function fetchQuorums(): Promise<Quorum[]> {
-  if (USE_MOCK_API) {
-    return deepCopy(db.quorums);
-  }
-
   const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
   const hydrated = await Promise.all(
     quorums.map(async (quorum, index) => {
@@ -179,37 +125,23 @@ export async function fetchQuorums(): Promise<Quorum[]> {
 }
 
 export async function fetchPosts(quorum?: string): Promise<Post[]> {
-  if (USE_MOCK_API) {
-    const filteredPosts = quorum ? db.posts.filter((post) => post.quorum === quorum) : db.posts;
-    return deepCopy(filteredPosts.map(stripReplies));
-  }
-
   if (quorum) {
-    const { threads } = await requestApi<{ threads: BackendThread[] }>(
-      `/quorums/${encodeURIComponent(quorum)}/threads`
-    );
+    const threads = await fetchAllThreadsForQuorum(quorum);
     return threads.map((thread) => mapBackendThreadToPost(thread, quorum));
   }
 
-  const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
-  const threadGroups = await Promise.all(
+  const quorums = await fetchQuorums();
+  const groups = await Promise.all(
     quorums.map(async (entry) => {
-      const { threads } = await requestApi<{ threads: BackendThread[] }>(
-        `/quorums/${encodeURIComponent(entry.name)}/threads`
-      );
+      const threads = await fetchAllThreadsForQuorum(entry.name);
       return threads.map((thread) => mapBackendThreadToPost(thread, entry.name));
     })
   );
 
-  return threadGroups.flat();
+  return groups.flat();
 }
 
 export async function fetchPost(id: string): Promise<PostDetail | null> {
-  if (USE_MOCK_API) {
-    const post = db.posts.find((entry) => entry.id === id);
-    return post ? deepCopy(post) : null;
-  }
-
   const threadPayload = await requestMaybeApi<{ thread: BackendThread }>(`/threads/${encodeURIComponent(id)}`);
   if (!threadPayload) {
     return null;
@@ -220,28 +152,35 @@ export async function fetchPost(id: string): Promise<PostDetail | null> {
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
-  if (USE_MOCK_API) {
-    return deepCopy(db.agents);
-  }
+  const quorums = await fetchQuorums();
+  const threadGroups = await Promise.all(
+    quorums.map((entry) => fetchAllThreadsForQuorum(entry.name))
+  );
+  const threads = threadGroups.flat();
 
-  const posts = await fetchPosts();
-  const map = new Map<string, Agent>();
-  const postCounts = new Map<string, number>();
+  const threadCountBySlug = new Map<string, number>();
+  const agentsBySlug = new Map<string, Agent>();
 
-  for (const post of posts) {
-    if (post.author.type !== "agent") {
-      continue;
-    }
-    map.set(post.author.slug, post.author);
-    postCounts.set(post.author.slug, (postCounts.get(post.author.slug) ?? 0) + 1);
-  }
+  threads.forEach((thread) => {
+    const mapped = mapBackendAgent(thread.agent);
+    threadCountBySlug.set(mapped.slug, (threadCountBySlug.get(mapped.slug) ?? 0) + 1);
+    agentsBySlug.set(mapped.slug, mapped);
+  });
 
-  const ranked = [...map.values()]
+  const details = await Promise.all(
+    [...agentsBySlug.keys()].map(async (slug) => {
+      const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
+      return payload?.agent ? mapBackendAgent(payload.agent) : agentsBySlug.get(slug);
+    })
+  );
+
+  const merged = details
+    .filter((agent): agent is Agent => Boolean(agent))
     .map((agent) => ({
       ...agent,
       stats: {
         ...agent.stats,
-        posts: postCounts.get(agent.slug) ?? 0
+        posts: threadCountBySlug.get(agent.slug) ?? 0
       }
     }))
     .sort((a, b) => b.stats.posts - a.stats.posts || a.name.localeCompare(b.name))
@@ -253,15 +192,10 @@ export async function fetchAgents(): Promise<Agent[]> {
       }
     }));
 
-  return ranked;
+  return merged;
 }
 
 export async function fetchAgent(slug: string): Promise<Agent | null> {
-  if (USE_MOCK_API) {
-    const agent = db.agents.find((entry) => entry.slug === slug);
-    return agent ? deepCopy(agent) : null;
-  }
-
   const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
   if (payload?.agent) {
     return mapBackendAgent(payload.agent);
@@ -272,264 +206,178 @@ export async function fetchAgent(slug: string): Promise<Agent | null> {
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
-  if (USE_MOCK_API) {
-    refreshMockActivity();
-    return deepCopy(db.activity);
-  }
-
   if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
     return [];
   }
 
-  return withBackendFallback(
-    () => requestJson<ActivityItem[]>("/api/activity"),
-    () => {
-      refreshMockActivity();
-      return deepCopy(db.activity);
-    }
-  );
+  try {
+    return await requestJson<ActivityItem[]>("/api/activity");
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchAgentActivity(slug: string): Promise<AgentActivity[]> {
-  return withBackendFallback(
-    () => requestJson<AgentActivity[]>(`/api/agents/${encodeURIComponent(slug)}/activity`),
-    () => deepCopy(db.agentActivity[slug] ?? [])
+  const quorums = await fetchQuorums();
+  const threadGroups = await Promise.all(
+    quorums.map(async (quorum) => {
+      const threads = await fetchAllThreadsForQuorum(quorum.name);
+      return threads.map((thread) => ({ thread, quorumName: quorum.name }));
+    })
   );
+
+  const scopedThreads = threadGroups.flat();
+  const activity: AgentActivityInternal[] = [];
+
+  scopedThreads.forEach(({ thread, quorumName }) => {
+    const author = mapBackendAgent(thread.agent);
+    if (author.slug !== slug) {
+      return;
+    }
+
+    activity.push({
+      id: `thread-${thread.id}`,
+      description: `Started thread in q/${quorumName}: ${thread.title}`,
+      timestamp: thread.created_at,
+      createdAtMs: Date.parse(thread.created_at)
+    });
+  });
+
+  const repliesPerThread = await Promise.all(
+    scopedThreads.map(async ({ thread, quorumName }) => {
+      const payload = await requestMaybeApi<{ replies: BackendReply[] }>(`/threads/${encodeURIComponent(thread.id)}/replies`);
+      return {
+        thread,
+        quorumName,
+        replies: payload?.replies ?? []
+      };
+    })
+  );
+
+  repliesPerThread.forEach(({ thread, quorumName, replies }) => {
+    replies.forEach((reply) => {
+      const author = mapBackendAgent(reply.agent);
+      if (author.slug !== slug) {
+        return;
+      }
+
+      activity.push({
+        id: `reply-${reply.id}`,
+        description: `Replied in q/${quorumName}: ${thread.title}`,
+        timestamp: reply.created_at,
+        createdAtMs: Date.parse(reply.created_at)
+      });
+    });
+  });
+
+  return activity
+    .filter((item) => Number.isFinite(item.createdAtMs))
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .map(({ createdAtMs: _createdAtMs, ...item }) => item);
 }
 
-export async function fetchUserProfile(username: string): Promise<UserProfile | null> {
-  return withBackendFallback(
-    () => requestMaybeJson<UserProfile>(`/api/users/${encodeURIComponent(username)}`),
-    () => {
-      const user = db.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
-      if (!user) {
-        return null;
-      }
-      return deepCopy(buildUserProfile(user));
-    }
-  );
+export async function fetchUserProfile(_username: string): Promise<UserProfile | null> {
+  return null;
 }
 
 export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
-  return withBackendFallback(
-    () => requestJson<LeaderboardData>(`/api/leaderboard?timeframe=${encodeURIComponent(timeframe)}`),
-    () => {
-      const timeframeHours = timeframeToHours(timeframe);
-      const scopedPosts = db.posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
+  const [quorums, posts, agents] = await Promise.all([
+    fetchQuorums(),
+    fetchPosts(),
+    fetchAgents()
+  ]);
 
-      const topPosts = [...scopedPosts]
-        .map(stripReplies)
-        .sort((a, b) => scorePost(b) - scorePost(a))
-        .slice(0, 8);
+  const timeframeHours = timeframeToHours(timeframe);
+  const scopedPosts = posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
 
-      const topQuorums = db.quorums
-        .map((quorum) => {
-          const related = scopedPosts.filter((post) => post.quorum === quorum.name);
-          const activityScore = related.reduce(
-            (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
-            0
-          );
-          return { quorum, activityScore };
-        })
-        .filter((entry) => entry.activityScore > 0)
-        .sort((a, b) => b.activityScore - a.activityScore);
+  const topPosts = [...scopedPosts]
+    .sort((a, b) => scorePost(b) - scorePost(a))
+    .slice(0, 8);
 
-      const topAgents = buildAgentLeaderboard(scopedPosts).slice(0, 6);
+  const topQuorums = quorums
+    .map((quorum) => {
+      const related = scopedPosts.filter((post) => post.quorum === quorum.name);
+      const activityScore = related.reduce(
+        (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
+        0
+      );
+      return { quorum, activityScore };
+    })
+    .filter((entry) => entry.activityScore > 0)
+    .sort((a, b) => b.activityScore - a.activityScore)
+    .slice(0, 8);
 
-      return deepCopy({ topAgents, topPosts, topQuorums });
-    }
-  );
+  const topAgents = [...agents]
+    .sort((a, b) => b.stats.posts - a.stats.posts || a.name.localeCompare(b.name))
+    .slice(0, 8);
+
+  return { topAgents, topPosts, topQuorums };
 }
 
 export async function fetchExploreGraph(quorum?: string): Promise<ExploreGraphData> {
-  return withBackendFallback(
-    async () => {
-      const suffix = quorum ? `?quorum=${encodeURIComponent(quorum)}` : "";
-      return requestJson<ExploreGraphData>(`/api/explore${suffix}`);
-    },
-    () => {
-      const posts = quorum ? db.posts.filter((entry) => entry.quorum === quorum) : db.posts;
-      const nodes = new Map<string, ExploreNode>();
-      const links: ExploreLink[] = [];
+  const posts = await fetchPosts(quorum);
+  const nodes = new Map<string, ExploreNode>();
+  const links: ExploreLink[] = [];
 
-      for (const post of posts) {
-        const quorumKey = `q:${post.quorum}`;
-        if (!nodes.has(quorumKey)) {
-          const q = db.quorums.find((entry) => entry.name === post.quorum);
-          nodes.set(quorumKey, {
-            id: quorumKey,
-            label: q?.displayName ?? post.quorum,
-            type: "quorum",
-            quorum: post.quorum
-          });
-        }
-
-        const postKey = `p:${post.id}`;
-        nodes.set(postKey, {
-          id: postKey,
-          label: post.title,
-          type: "post",
-          quorum: post.quorum,
-          confidence: post.consensus
-        });
-        links.push({ source: quorumKey, target: postKey });
-
-        const authorKey =
-          post.author.type === "agent"
-            ? `a:${post.author.slug}`
-            : `a:user:${post.author.username}`;
-        if (!nodes.has(authorKey)) {
-          nodes.set(authorKey, {
-            id: authorKey,
-            label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
-            type: "agent",
-            quorum: post.quorum
-          });
-        }
-        links.push({ source: authorKey, target: postKey });
-
-        post.claims.forEach((claim) => {
-          const claimKey = `c:${claim.id}`;
-          nodes.set(claimKey, {
-            id: claimKey,
-            label: claim.text,
-            type: "claim",
-            quorum: post.quorum,
-            confidence: claim.consensus
-          });
-          links.push({ source: postKey, target: claimKey });
-        });
-      }
-
-      return deepCopy({ nodes: [...nodes.values()], links });
-    }
-  );
-}
-
-export async function fetchPostAnalysisRuns(postId: string): Promise<AnalysisRun[]> {
-  return withBackendFallback(
-    () => requestJson<AnalysisRun[]>(`/api/posts/${encodeURIComponent(postId)}/analyze/runs`),
-    () => {
-      const runs = db.analysisRuns
-        .filter((run) => run.postId === postId)
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-      return deepCopy(runs);
-    }
-  );
-}
-
-export async function fetchAnalysisRun(runId: string): Promise<AnalysisRun | null> {
-  return withBackendFallback(
-    () => requestMaybeJson<AnalysisRun>(`/api/analyze/runs/${encodeURIComponent(runId)}`),
-    () => {
-      const run = db.analysisRuns.find((entry) => entry.id === runId);
-      return run ? deepCopy(run) : null;
-    }
-  );
-}
-
-export async function fetchAnalysisEvents(runId: string): Promise<AnalysisEvent[]> {
-  return withBackendFallback(
-    () => requestJson<AnalysisEvent[]>(`/api/analyze/runs/${encodeURIComponent(runId)}/events`),
-    () => {
-      const events = db.analysisEvents[runId] ?? [];
-      return deepCopy(events);
-    }
-  );
-}
-
-export async function startAnalysisRun(postId: string): Promise<AnalysisRun> {
-  return withBackendFallback(
-    () =>
-      requestJson<AnalysisRun>(`/api/posts/${encodeURIComponent(postId)}/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "standard" })
-      }),
-    () => {
-      const startedAt = new Date().toISOString();
-      const run: AnalysisRun = {
-        id: createId("run"),
-        postId,
-        status: "queued",
-        progress: 0,
-        agents: pickAnalysisAgents(),
-        startedAt,
-        updatedAt: startedAt
-      };
-
-      db.analysisRuns.unshift(run);
-      db.analysisEvents[run.id] = [];
-      appendAnalysisEvent(run.id, {
-        type: "status",
-        message: "Analysis requested and queued.",
-        progress: 0
+  for (const post of posts) {
+    const quorumKey = `q:${post.quorum}`;
+    if (!nodes.has(quorumKey)) {
+      nodes.set(quorumKey, {
+        id: quorumKey,
+        label: `q/${post.quorum}`,
+        type: "quorum",
+        quorum: post.quorum
       });
-      simulateAnalysisRun(run.id);
-      return deepCopy(run);
     }
-  );
-}
 
-export async function cancelAnalysisRun(runId: string): Promise<AnalysisRun | null> {
-  return withBackendFallback(
-    () =>
-      requestMaybeJson<AnalysisRun>(`/api/analyze/runs/${encodeURIComponent(runId)}/cancel`, {
-        method: "POST"
-      }),
-    () => {
-      const run = db.analysisRuns.find((entry) => entry.id === runId);
-      if (!run) {
-        return null;
-      }
-      if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
-        return deepCopy(run);
-      }
+    const postKey = `p:${post.id}`;
+    nodes.set(postKey, {
+      id: postKey,
+      label: post.title,
+      type: "post",
+      quorum: post.quorum,
+      confidence: post.consensus
+    });
+    links.push({ source: quorumKey, target: postKey });
 
-      clearRunTimers(runId);
-      updateRun(runId, {
-        status: "cancelled",
-        updatedAt: new Date().toISOString()
+    const authorKey = post.author.type === "agent" ? `a:${post.author.slug}` : `u:${post.author.username}`;
+    if (!nodes.has(authorKey)) {
+      nodes.set(authorKey, {
+        id: authorKey,
+        label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
+        type: "agent",
+        quorum: post.quorum
       });
-      appendAnalysisEvent(runId, {
-        type: "status",
-        message: "Analysis was cancelled.",
-        progress: run.progress
-      });
-      return deepCopy(run);
     }
-  );
-}
 
-export async function vote(postId: string): Promise<Post | null> {
-  if (isReadOnlyApp()) {
-    return null;
+    links.push({ source: authorKey, target: postKey });
   }
 
-  return withBackendFallback(
-    async () => {
-      const updated = await requestMaybeJson<Post>(`/api/posts/${encodeURIComponent(postId)}/vote`, {
-        method: "POST"
-      });
-      if (updated) {
-        return withPostDefaults(updated);
-      }
-      const refreshed = await requestMaybeJson<Post>(`/api/posts/${encodeURIComponent(postId)}`);
-      return refreshed ? withPostDefaults(refreshed) : null;
-    },
-    () => {
-      const post = db.posts.find((entry) => entry.id === postId);
-      if (!post) {
-        return null;
-      }
+  return { nodes: [...nodes.values()], links };
+}
 
-      const hasVoted = db.votedPostIds.has(postId);
-      db.votedPostIds[hasVoted ? "delete" : "add"](postId);
-      post.votes += hasVoted ? -1 : 1;
+export async function fetchPostAnalysisRuns(_postId: string): Promise<AnalysisRun[]> {
+  return [];
+}
 
-      return deepCopy(stripReplies(post));
-    }
-  );
+export async function fetchAnalysisRun(_runId: string): Promise<AnalysisRun | null> {
+  return null;
+}
+
+export async function fetchAnalysisEvents(_runId: string): Promise<AnalysisEvent[]> {
+  return [];
+}
+
+export async function startAnalysisRun(_postId: string): Promise<AnalysisRun> {
+  throw new Error("Analysis endpoint is not available in the current backend.");
+}
+
+export async function cancelAnalysisRun(_runId: string): Promise<AnalysisRun | null> {
+  return null;
+}
+
+export async function vote(_postId: string): Promise<Post | null> {
+  return null;
 }
 
 export async function submitPost(data: SubmitPostInput): Promise<Post> {
@@ -537,52 +385,16 @@ export async function submitPost(data: SubmitPostInput): Promise<Post> {
     throw new Error("Read-only mode: creating threads is disabled.");
   }
 
-  return withBackendFallback(
-    async () => {
-      const post = await requestJson<Post>("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
-      return withPostDefaults(post);
-    },
-    () => {
-      const now = "just now";
-      const newPost: PostDetail = {
-        id: createId("post"),
-        title: data.title,
-        body: data.body,
-        quorum: data.quorum,
-        type: data.type ?? "question",
-        author: data.author ?? {
-          id: "u-current",
-          type: "human",
-          username: "you"
-        },
-        votes: 0,
-        consensus: 0,
-        claims: [],
-        citations: [],
-        tags: data.tags ?? [],
-        replyCount: 0,
-        createdAt: now,
-        replies: []
-      };
+  const payload = await requestApi<{ thread: BackendThread }>(`/quorums/${encodeURIComponent(data.quorum)}/threads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: data.title,
+      content: data.body
+    })
+  });
 
-      db.posts.unshift(newPost);
-
-      const quorum = db.quorums.find((entry) => entry.name === newPost.quorum);
-      if (quorum) {
-        quorum.postCount += 1;
-      }
-
-      if (newPost.author.type === "human") {
-        ensureUserProfile(newPost.author.id, newPost.author.username);
-      }
-
-      return deepCopy(stripReplies(newPost));
-    }
-  );
+  return mapBackendThreadToPost(payload.thread, data.quorum);
 }
 
 export async function submitReply(input: SubmitReplyInput): Promise<PostDetail | null> {
@@ -590,106 +402,35 @@ export async function submitReply(input: SubmitReplyInput): Promise<PostDetail |
     return null;
   }
 
-  return withBackendFallback(
-    async () => {
-      const updated = await requestMaybeJson<PostDetail>(`/api/posts/${encodeURIComponent(input.postId)}/replies`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body: input.body,
-          parentId: input.parentId,
-          author: input.author
-        })
-      });
-      return updated ? withPostDetailDefaults(updated) : null;
-    },
-    () => {
-      const post = db.posts.find((entry) => entry.id === input.postId);
-      if (!post) {
-        return null;
-      }
+  await requestApi<{ reply: BackendReply }>(`/threads/${encodeURIComponent(input.postId)}/replies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: input.body,
+      vote: 1,
+      parent_reply_id: input.parentId ?? null
+    })
+  });
 
-      const author =
-        input.author ??
-        ({
-          id: "u-current",
-          type: "human",
-          username: "you"
-        } as const);
-
-      if (author.type === "human") {
-        ensureUserProfile(author.id, author.username);
-      }
-
-      const reply = {
-        id: createId("reply"),
-        body: input.body.trim(),
-        author,
-        votes: 0,
-        citations: [],
-        parentId: input.parentId ?? null,
-        children: [],
-        createdAt: "just now"
-      };
-
-      if (input.parentId) {
-        const inserted = insertReplyInTree(post.replies, input.parentId, reply);
-        if (!inserted) {
-          post.replies.push(reply);
-        }
-      } else {
-        post.replies.push(reply);
-      }
-
-      post.replyCount += 1;
-      return deepCopy(post);
-    }
-  );
+  return fetchPost(input.postId);
 }
 
-function createEventSourceStream(
-  path: string,
-  onPayload: (payload: unknown) => void,
-  onError?: (error?: unknown) => void
-): (() => void) | null {
-  if (
-    USE_MOCK_API ||
-    typeof window === "undefined" ||
-    typeof EventSource === "undefined"
-  ) {
-    return null;
-  }
+async function fetchAllThreadsForQuorum(quorumName: string): Promise<BackendThread[]> {
+  const pageSize = 100;
+  const maxPages = 20;
+  const all: BackendThread[] = [];
 
-  const stream = new EventSource(`${API_BASE}${path}`);
-  stream.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(event.data);
-      onPayload(payload);
-    } catch (error) {
-      onError?.(error);
+  for (let page = 0; page < maxPages; page += 1) {
+    const offset = page * pageSize;
+    const query = `/quorums/${encodeURIComponent(quorumName)}/threads?limit=${pageSize}&offset=${offset}`;
+    const { threads } = await requestApi<{ threads: BackendThread[] }>(query);
+    all.push(...threads);
+    if (threads.length < pageSize) {
+      break;
     }
-  };
-  stream.onerror = (error) => {
-    onError?.(error);
-    stream.close();
-  };
-
-  return () => stream.close();
-}
-
-async function withBackendFallback<T>(
-  backendCall: () => Promise<T>,
-  fallback: () => T | Promise<T>
-): Promise<T> {
-  if (USE_MOCK_API) {
-    return fallback();
   }
 
-  try {
-    return await backendCall();
-  } catch {
-    return fallback();
-  }
+  return all;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -701,24 +442,6 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 204) {
     return null as T;
-  }
-
-  return response.json() as Promise<T>;
-}
-
-async function requestMaybeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const response = await fetchWithDefaults(path, init);
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-
-  if (response.status === 204) {
-    return null;
   }
 
   return response.json() as Promise<T>;
@@ -876,7 +599,7 @@ function mapBackendQuorum(quorum: BackendQuorum, index: number): Quorum {
 
 function mapBackendThreadToPost(thread: BackendThread, fallbackQuorumName?: string): Post {
   const quorumName = thread.quorum?.name ?? fallbackQuorumName ?? "general";
-  return withPostDefaults({
+  return {
     id: thread.id,
     title: thread.title,
     body: thread.content,
@@ -890,7 +613,7 @@ function mapBackendThreadToPost(thread: BackendThread, fallbackQuorumName?: stri
     tags: [],
     replyCount: thread.reply_count ?? 0,
     createdAt: toRelativeTime(thread.created_at)
-  });
+  };
 }
 
 function mapBackendThreadToPostDetail(
@@ -898,10 +621,10 @@ function mapBackendThreadToPostDetail(
   replies: BackendReply[]
 ): PostDetail {
   const post = mapBackendThreadToPost(thread, thread.quorum?.name);
-  return withPostDetailDefaults({
+  return {
     ...post,
     replies: buildReplyTree(replies)
-  });
+  };
 }
 
 function mapBackendAgent(agent?: BackendAgent | null): Agent {
@@ -1020,370 +743,6 @@ function toRelativeTime(value?: string): string {
   return `${days}d`;
 }
 
-function withPostDefaults(post: Post): Post {
-  return {
-    ...post,
-    claims: post.claims ?? [],
-    citations: post.citations ?? [],
-    tags: post.tags ?? [],
-    replyCount: post.replyCount ?? 0
-  };
-}
-
-function withPostDetailDefaults(post: PostDetail): PostDetail {
-  return {
-    ...withPostDefaults(post),
-    replies: post.replies ?? []
-  };
-}
-
-function ensureUserProfile(userId: string, username: string) {
-  const exists = db.users.find((entry) => entry.id === userId);
-  if (exists) {
-    return;
-  }
-  db.users.push({
-    id: userId,
-    username,
-    joinedAt: new Date().toISOString().slice(0, 10),
-    bio: "MetaQuorum member",
-    stats: { posts: 0, totalVotes: 0, totalReplies: 0 },
-    posts: []
-  });
-}
-
-function refreshMockActivity() {
-  ageActivityFeed();
-
-  const newItem = nextActivityItem();
-  if (newItem) {
-    db.activity.unshift(newItem);
-  }
-
-  db.activity = db.activity.slice(0, 14);
-}
-
-function ageActivityFeed() {
-  db.activity = db.activity.map((item) => ({
-    ...item,
-    timestamp: bumpRelativeMinutes(item.timestamp)
-  }));
-}
-
-function bumpRelativeMinutes(value: string): string {
-  const text = value.toLowerCase().trim();
-  if (text === "just now") {
-    return "1m";
-  }
-
-  const match = text.match(/^(\d+)([mh])$/);
-  if (!match) {
-    return value;
-  }
-
-  const amount = Number(match[1]);
-  const unit = match[2];
-  if (unit === "m") {
-    const nextMinutes = amount + 1;
-    if (nextMinutes >= 60) {
-      return "1h";
-    }
-    return `${nextMinutes}m`;
-  }
-
-  return `${Math.min(amount + 1, 48)}h`;
-}
-
-function nextActivityItem(): ActivityItem | null {
-  if (!db.posts.length) {
-    return null;
-  }
-
-  const post = db.posts[activitySeed % db.posts.length];
-  const agentPool = db.agents.filter((agent) => agent.isOnline);
-  const actorIsAgent = activitySeed % 3 !== 0;
-
-  const actor = actorIsAgent
-    ? agentPool[activitySeed % Math.max(agentPool.length, 1)]?.name ?? "ResearchAgent-3"
-    : `@${post.author.type === "human" ? post.author.username : "you"}`;
-
-  const actionPool = actorIsAgent
-    ? ["challenged a claim", "added 2 citations", "posted a synthesis", "updated confidence scores"]
-    : ["opened a thread", "posted a reply", "requested analysis"];
-  const action = actionPool[activitySeed % actionPool.length];
-  activitySeed += 1;
-
-  return {
-    id: createId("activity"),
-    actor,
-    action,
-    target: `q/${post.quorum}`,
-    timestamp: "just now",
-    actorType: actorIsAgent ? "agent" : "human"
-  };
-}
-
-function pickAnalysisAgents(): string[] {
-  const preferred = ["ResearchAgent-3", "SkepticBot-7", "StatBot"];
-  const available = db.agents.map((agent) => agent.name);
-  return preferred.filter((name) => available.includes(name));
-}
-
-function simulateAnalysisRun(runId: string) {
-  clearRunTimers(runId);
-
-  const steps: Array<{
-    delay: number;
-    action: () => void;
-  }> = [
-    {
-      delay: 700,
-      action: () => {
-        updateRun(runId, {
-          status: "running",
-          progress: 12,
-          updatedAt: new Date().toISOString()
-        });
-        appendAnalysisEvent(runId, {
-          type: "status",
-          message: "Agents are initializing context.",
-          progress: 12
-        });
-      }
-    },
-    {
-      delay: 1600,
-      action: () => {
-        updateRun(runId, {
-          status: "running",
-          progress: 32,
-          updatedAt: new Date().toISOString()
-        });
-        appendAnalysisEvent(runId, {
-          type: "agent_thinking",
-          agentName: "ResearchAgent-3",
-          message: "Reviewing trial cohorts and endpoint definitions.",
-          progress: 32
-        });
-      }
-    },
-    {
-      delay: 2400,
-      action: () => {
-        updateRun(runId, {
-          status: "running",
-          progress: 56,
-          updatedAt: new Date().toISOString()
-        });
-        appendAnalysisEvent(runId, {
-          type: "citation_added",
-          agentName: "SkepticBot-7",
-          message: "Added 2 contradictory citations for bias assessment.",
-          progress: 56
-        });
-      }
-    },
-    {
-      delay: 3300,
-      action: () => {
-        updateRun(runId, {
-          status: "running",
-          progress: 76,
-          updatedAt: new Date().toISOString()
-        });
-        appendAnalysisEvent(runId, {
-          type: "claim_added",
-          agentName: "StatBot",
-          message: "Generated claim-level confidence deltas.",
-          progress: 76
-        });
-      }
-    },
-    {
-      delay: 4300,
-      action: () => {
-        const completedAt = new Date().toISOString();
-        const summary = "Analysis complete: evidence quality is moderate with key uncertainty in sample composition.";
-        updateRun(runId, {
-          status: "completed",
-          progress: 100,
-          summary,
-          updatedAt: completedAt,
-          completedAt
-        });
-        appendAnalysisEvent(runId, {
-          type: "summary",
-          message: summary,
-          progress: 100
-        });
-        persistAnalysisReply(runId, summary);
-      }
-    }
-  ];
-
-  steps.forEach((step) => {
-    scheduleRunStep(runId, step.delay, () => {
-      const run = db.analysisRuns.find((entry) => entry.id === runId);
-      if (!run || run.status === "cancelled") {
-        return;
-      }
-      step.action();
-    });
-  });
-}
-
-function persistAnalysisReply(runId: string, summary: string) {
-  const run = db.analysisRuns.find((entry) => entry.id === runId);
-  if (!run) {
-    return;
-  }
-  const post = db.posts.find((entry) => entry.id === run.postId);
-  const synthesizer = db.agents.find((agent) => agent.slug === "synthesizer-a1");
-  if (!post || !synthesizer) {
-    return;
-  }
-
-  post.replies.unshift({
-    id: createId("reply"),
-    body: summary,
-    author: synthesizer,
-    votes: 0,
-    citations: [],
-    parentId: null,
-    children: [],
-    createdAt: "just now"
-  });
-  post.replyCount += 1;
-}
-
-function updateRun(runId: string, patch: Partial<AnalysisRun>) {
-  const index = db.analysisRuns.findIndex((entry) => entry.id === runId);
-  if (index < 0) {
-    return;
-  }
-  db.analysisRuns[index] = {
-    ...db.analysisRuns[index],
-    ...patch
-  };
-}
-
-function appendAnalysisEvent(
-  runId: string,
-  event: Omit<AnalysisEvent, "id" | "runId" | "timestamp">
-) {
-  if (!db.analysisEvents[runId]) {
-    db.analysisEvents[runId] = [];
-  }
-  db.analysisEvents[runId].push({
-    id: createId("evt"),
-    runId,
-    timestamp: new Date().toISOString(),
-    ...event
-  });
-}
-
-function scheduleRunStep(runId: string, delay: number, action: () => void) {
-  const timer = setTimeout(() => {
-    action();
-    const timers = runTimers.get(runId);
-    if (!timers) {
-      return;
-    }
-    runTimers.set(
-      runId,
-      timers.filter((entry) => entry !== timer)
-    );
-  }, delay);
-
-  const timers = runTimers.get(runId) ?? [];
-  timers.push(timer);
-  runTimers.set(runId, timers);
-}
-
-function clearRunTimers(runId: string) {
-  const timers = runTimers.get(runId) ?? [];
-  timers.forEach((timer) => clearTimeout(timer));
-  runTimers.delete(runId);
-}
-
-function insertReplyInTree(
-  replies: PostDetail["replies"],
-  parentId: string,
-  reply: PostDetail["replies"][number]
-): boolean {
-  for (const node of replies) {
-    if (node.id === parentId) {
-      node.children.push(reply);
-      return true;
-    }
-    if (insertReplyInTree(node.children, parentId, reply)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function stripReplies(post: PostDetail): Post {
-  const { replies: _replies, ...summary } = post;
-  return summary;
-}
-
-function buildUserProfile(user: UserProfile): UserProfile {
-  const userPosts = db.posts
-    .filter((post) => post.author.type === "human" && post.author.username === user.username)
-    .map(stripReplies);
-  const totalVotes = userPosts.reduce((sum, post) => sum + post.votes, 0);
-  const totalReplies = userPosts.reduce((sum, post) => sum + post.replyCount, 0);
-
-  return {
-    ...user,
-    posts: userPosts,
-    stats: {
-      posts: userPosts.length,
-      totalVotes,
-      totalReplies
-    }
-  };
-}
-
-function buildAgentLeaderboard(posts: PostDetail[]): Agent[] {
-  const scored = db.agents.map((agent) => {
-    const authored = posts.filter(
-      (post) => post.author.type === "agent" && post.author.slug === agent.slug
-    );
-    const postCount = authored.length;
-    const citationCount = authored.reduce((count, post) => {
-      const claimCitations = post.claims.reduce((total, claim) => total + claim.citations.length, 0);
-      return count + post.citations.length + claimCitations;
-    }, 0);
-    const accuracy = postCount
-      ? authored.reduce((total, post) => total + post.consensus, 0) / postCount
-      : agent.stats.accuracy * 0.95;
-
-    const score = postCount * 9 + citationCount * 0.8 + accuracy * 0.45;
-
-    return {
-      ...agent,
-      stats: {
-        posts: postCount,
-        accuracy: Number(accuracy.toFixed(1)),
-        citations: citationCount,
-        rank: 0
-      },
-      score
-    };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.map(({ score: _score, ...agent }, index) => ({
-    ...agent,
-    stats: {
-      ...agent.stats,
-      rank: index + 1
-    }
-  }));
-}
-
 function timeframeToHours(timeframe: LeaderboardTimeframe): number {
   if (timeframe === "week") {
     return 24 * 7;
@@ -1418,12 +777,4 @@ function postAgeHours(value: string): number {
 
 function scorePost(post: Post): number {
   return post.votes * 0.65 + post.consensus * 0.35 + post.replyCount * 0.25;
-}
-
-function createId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function deepCopy<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }

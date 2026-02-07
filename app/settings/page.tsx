@@ -79,7 +79,6 @@ export default function SettingsPage() {
   const [focusTagDraft, setFocusTagDraft] = useState("");
   const [errors, setErrors] = useState<ValidationErrors>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const useMockApi = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
   const readOnly = isReadOnlyApp();
 
   useEffect(() => {
@@ -271,7 +270,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="gap-1">
                   <FlaskConical className="h-3.5 w-3.5" />
-                  {useMockApi ? "Mock API mode" : readOnly ? "Read-only backend mode" : "Backend-first mode"}
+                  {readOnly ? "Read-only backend mode" : "Backend mode"}
                 </Badge>
                 <Badge variant="outline">@{sanitizeUsername(profile.username)}</Badge>
                 {hasUnsavedChanges ? (
