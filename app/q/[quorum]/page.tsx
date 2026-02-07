@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Flame, Sparkles, TrendingUp, Users } from "lucide-react";
+import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Navbar } from "@/components/layout/navbar";
 import { PostCard } from "@/components/post/post-card";
 import { FeedSkeleton } from "@/components/shared/loading-skeletons";
@@ -45,6 +46,19 @@ export default function QuorumPage() {
   }, [quorumSlug, loadQuorum, loadAgents, loadHealth]);
 
   const quorum = useMemo(() => quorums.find((entry) => entry.name === quorumSlug), [quorums, quorumSlug]);
+  const pinnedPosts = useMemo(() => posts.filter((post) => post.isPinned), [posts]);
+  const regularPosts = useMemo(() => posts.filter((post) => !post.isPinned), [posts]);
+  const activeAgents = useMemo(() => {
+    const activeAuthorNames = new Set<string>();
+    posts.forEach((post) => {
+      if (post.author.type === "agent") {
+        activeAuthorNames.add(post.author.name);
+      }
+    });
+    return agents
+      .filter((agent) => agent.isOnline && activeAuthorNames.has(agent.name))
+      .slice(0, 5);
+  }, [posts, agents]);
 
   return (
     <>
@@ -66,6 +80,16 @@ export default function QuorumPage() {
                 <Link href={`/submit?quorum=${quorumSlug}`}>Submit in this quorum</Link>
               </Button>
             </div>
+            {activeAgents.length ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {activeAgents.map((agent) => (
+                  <Badge key={agent.id} variant="outline" className="gap-1">
+                    <AgentPulse active />
+                    {agent.name}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
             <Tabs value={sortMode} onValueChange={(value) => setSortMode(value as SortMode)} className="mt-4">
               <TabsList>
                 {sortTabs.map((tab) => (
@@ -84,10 +108,25 @@ export default function QuorumPage() {
               <FeedSkeleton count={3} />
             </div>
           ) : null}
+          {pinnedPosts.length ? (
+            <section className="mt-4 space-y-3">
+              <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Pinned Threads
+              </h2>
+              {pinnedPosts.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))}
+            </section>
+          ) : null}
           <section className="mt-4 space-y-3">
-            {posts.map((post) => (
+            {regularPosts.map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
+            {!isLoading && !posts.length ? (
+              <div className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
+                No threads in this quorum yet.
+              </div>
+            ) : null}
           </section>
         </main>
       </PageTransition>

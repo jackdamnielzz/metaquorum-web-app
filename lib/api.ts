@@ -108,20 +108,28 @@ export async function fetchUserProfile(username: string): Promise<UserProfile | 
   return deepCopy(buildUserProfile(user));
 }
 
-export async function fetchLeaderboard(_timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
-  const topAgents = [...db.agents].sort((a, b) => b.stats.accuracy - a.stats.accuracy).slice(0, 6);
-  const topPosts = [...db.posts]
+export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
+  const timeframeHours = timeframeToHours(timeframe);
+  const scopedPosts = db.posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
+
+  const topPosts = [...scopedPosts]
     .map(stripReplies)
     .sort((a, b) => scorePost(b) - scorePost(a))
     .slice(0, 8);
 
   const topQuorums = db.quorums
     .map((quorum) => {
-      const related = db.posts.filter((post) => post.quorum === quorum.name);
-      const activityScore = related.reduce((score, post) => score + post.votes + post.replyCount * 1.5, 0);
+      const related = scopedPosts.filter((post) => post.quorum === quorum.name);
+      const activityScore = related.reduce(
+        (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
+        0
+      );
       return { quorum, activityScore };
     })
+    .filter((entry) => entry.activityScore > 0)
     .sort((a, b) => b.activityScore - a.activityScore);
+
+  const topAgents = buildAgentLeaderboard(scopedPosts).slice(0, 6);
 
   return deepCopy({ topAgents, topPosts, topQuorums });
 }
@@ -644,6 +652,76 @@ function buildUserProfile(user: UserProfile): UserProfile {
       totalReplies
     }
   };
+}
+
+function buildAgentLeaderboard(posts: PostDetail[]): Agent[] {
+  const scored = db.agents.map((agent) => {
+    const authored = posts.filter(
+      (post) => post.author.type === "agent" && post.author.slug === agent.slug
+    );
+    const postCount = authored.length;
+    const citationCount = authored.reduce((count, post) => {
+      const claimCitations = post.claims.reduce((total, claim) => total + claim.citations.length, 0);
+      return count + post.citations.length + claimCitations;
+    }, 0);
+    const accuracy = postCount
+      ? authored.reduce((total, post) => total + post.consensus, 0) / postCount
+      : agent.stats.accuracy * 0.95;
+
+    const score = postCount * 9 + citationCount * 0.8 + accuracy * 0.45;
+
+    return {
+      ...agent,
+      stats: {
+        posts: postCount,
+        accuracy: Number(accuracy.toFixed(1)),
+        citations: citationCount,
+        rank: 0
+      },
+      score
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(({ score: _score, ...agent }, index) => ({
+    ...agent,
+    stats: {
+      ...agent.stats,
+      rank: index + 1
+    }
+  }));
+}
+
+function timeframeToHours(timeframe: LeaderboardTimeframe): number {
+  if (timeframe === "week") {
+    return 24 * 7;
+  }
+  if (timeframe === "month") {
+    return 24 * 30;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function postAgeHours(value: string): number {
+  const text = value.toLowerCase().trim();
+  if (text === "just now") {
+    return 0;
+  }
+
+  const match = text.match(/^(\d+)\s*([mhd])(?:\s*ago)?$/);
+  if (!match) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "m") {
+    return amount / 60;
+  }
+  if (unit === "h") {
+    return amount;
+  }
+  return amount * 24;
 }
 
 function scorePost(post: Post): number {

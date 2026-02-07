@@ -448,15 +448,46 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
 function sortPosts(posts: Post[], mode: SortMode): Post[] {
   const copy = [...posts];
-  if (mode === "consensus") {
-    return copy.sort((a, b) => b.consensus - a.consensus);
-  }
-  if (mode === "new") {
-    return copy;
-  }
-  return copy.sort((a, b) => scorePost(b) - scorePost(a));
+  return copy.sort((a, b) => {
+    if (a.isPinned !== b.isPinned) {
+      return a.isPinned ? -1 : 1;
+    }
+
+    if (mode === "consensus") {
+      return b.consensus - a.consensus;
+    }
+
+    if (mode === "new") {
+      return relativeAgeMinutes(a.createdAt) - relativeAgeMinutes(b.createdAt);
+    }
+
+    return scorePost(b) - scorePost(a);
+  });
 }
 
 function scorePost(post: Post): number {
-  return post.votes * 0.65 + post.consensus * 0.35 + post.replyCount * 0.25;
+  const pinBoost = post.isPinned ? 400 : 0;
+  return post.votes * 0.65 + post.consensus * 0.35 + post.replyCount * 0.25 + pinBoost;
+}
+
+function relativeAgeMinutes(value: string): number {
+  const text = value.toLowerCase().trim();
+  if (text === "just now") {
+    return 0;
+  }
+
+  const match = text.match(/^(\d+)\s*([mhd])(?:\s*ago)?$/);
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "m") {
+    return amount;
+  }
+  if (unit === "h") {
+    return amount * 60;
+  }
+  return amount * 60 * 24;
 }

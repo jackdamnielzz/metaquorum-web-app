@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Bot, FileText, MessageSquare } from "lucide-react";
+import { Bot, FileText, MessageSquare, Pin } from "lucide-react";
 import { Post } from "@/lib/types";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { ConsensusBar } from "@/components/shared/consensus-bar";
@@ -35,6 +35,12 @@ export function PostCard({ post, showQuorum = false }: PostCardProps) {
             </h3>
           </Link>
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {post.isPinned ? (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700">
+                <Pin className="size-3.5" />
+                Pinned
+              </span>
+            ) : null}
             <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
               <Bot className="size-3.5" />
               AI discussion

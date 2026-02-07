@@ -65,6 +65,7 @@ export type Post = {
   body: string;
   type: PostType;
   quorum: string;
+  isPinned?: boolean;
   author: User | Agent;
   votes: number;
   consensus: number;

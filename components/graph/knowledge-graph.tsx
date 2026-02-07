@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type KnowledgeGraphProps = {
   data: ExploreGraphData;
@@ -35,10 +36,13 @@ const HEIGHT = 700;
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 1.8;
 const NODE_TYPES: ExploreNodeType[] = ["quorum", "post", "claim", "agent"];
+const FOCUS_DEPTH_OPTIONS = [1, 2, 3];
 
 export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
   const [query, setQuery] = useState("");
   const [minConfidence, setMinConfidence] = useState(25);
+  const [focusAgentId, setFocusAgentId] = useState("all");
+  const [focusDepth, setFocusDepth] = useState(2);
   const [enabledTypes, setEnabledTypes] = useState<Record<ExploreNodeType, boolean>>({
     quorum: true,
     post: true,
@@ -54,8 +58,19 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
   });
   const [dragState, setDragState] = useState<DragState>(null);
 
+  const availableAgents = useMemo(
+    () =>
+      data.nodes
+        .filter((node) => node.type === "agent")
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [data.nodes]
+  );
+
   const prepared = useMemo(() => {
-    const initial = data.nodes.filter((node) => {
+    const initialNodes = data.nodes.filter((node) => {
+      if (focusAgentId !== "all" && node.id === focusAgentId) {
+        return true;
+      }
       if (!enabledTypes[node.type]) {
         return false;
       }
@@ -65,26 +80,66 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
       return true;
     });
 
-    const visibleIds = new Set(initial.map((node) => node.id));
-    const links = data.links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target));
+    const initialVisibleIds = new Set(initialNodes.map((node) => node.id));
+    const initialLinks = data.links.filter(
+      (link) => initialVisibleIds.has(link.source) && initialVisibleIds.has(link.target)
+    );
+
+    const initialAdjacency = new Map<string, string[]>();
+    initialNodes.forEach((node) => initialAdjacency.set(node.id, []));
+    initialLinks.forEach((link) => {
+      initialAdjacency.get(link.source)?.push(link.target);
+      initialAdjacency.get(link.target)?.push(link.source);
+    });
+
+    let visibleIds = new Set(initialNodes.map((node) => node.id));
+
+    if (focusAgentId !== "all" && visibleIds.has(focusAgentId)) {
+      const scopedIds = new Set<string>([focusAgentId]);
+      let frontier = [focusAgentId];
+      for (let depth = 0; depth < focusDepth; depth += 1) {
+        const next: string[] = [];
+        for (const nodeId of frontier) {
+          const neighbors = initialAdjacency.get(nodeId) ?? [];
+          for (const neighborId of neighbors) {
+            if (!scopedIds.has(neighborId)) {
+              scopedIds.add(neighborId);
+              next.push(neighborId);
+            }
+          }
+        }
+        frontier = next;
+        if (!frontier.length) {
+          break;
+        }
+      }
+      visibleIds = scopedIds;
+    }
+
+    const nodes = initialNodes.filter((node) => visibleIds.has(node.id));
+    const links = initialLinks.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target));
     const connectedIds = new Set<string>();
     links.forEach((link) => {
       connectedIds.add(link.source);
       connectedIds.add(link.target);
     });
 
-    const nodes = initial.filter((node) => connectedIds.has(node.id));
-    const nodeMap = new Map(nodes.map((node) => [node.id, node] as const));
+    if (focusAgentId !== "all") {
+      connectedIds.add(focusAgentId);
+    }
+
+    const connectedNodes = nodes.filter((node) => connectedIds.has(node.id));
+    const nodeMap = new Map(connectedNodes.map((node) => [node.id, node] as const));
 
     const adjacency = new Map<string, string[]>();
-    nodes.forEach((node) => adjacency.set(node.id, []));
+    connectedNodes.forEach((node) => adjacency.set(node.id, []));
     links.forEach((link) => {
       adjacency.get(link.source)?.push(link.target);
       adjacency.get(link.target)?.push(link.source);
     });
 
-    return { nodes, links, nodeMap, adjacency };
-  }, [data.nodes, data.links, enabledTypes, minConfidence]);
+    return { nodes: connectedNodes, links, nodeMap, adjacency };
+  }, [data.nodes, data.links, enabledTypes, minConfidence, focusAgentId, focusDepth]);
 
   const matchedIds = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -193,6 +248,35 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
           />
           <span className="w-9 text-right font-mono text-xs">{minConfidence}%</span>
         </div>
+        <div className="w-[210px]">
+          <Select value={focusAgentId} onValueChange={setFocusAgentId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Focus agent" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All agents</SelectItem>
+              {availableAgents.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-[120px]">
+          <Select value={String(focusDepth)} onValueChange={(value) => setFocusDepth(Number(value))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Depth" />
+            </SelectTrigger>
+            <SelectContent>
+              {FOCUS_DEPTH_OPTIONS.map((depth) => (
+                <SelectItem key={depth} value={String(depth)}>
+                  Depth {depth}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button variant="outline" size="sm" onClick={() => zoom(0.12)}>
           <ZoomIn className="mr-1 h-4 w-4" />
           Zoom
@@ -229,6 +313,11 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
         <Badge variant="outline" className="font-mono text-[11px]">
           {prepared.links.length} links
         </Badge>
+        {focusAgentId !== "all" ? (
+          <Badge variant="outline" className="text-[11px]">
+            Agent focus active
+          </Badge>
+        ) : null}
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_300px]">
