@@ -19,7 +19,6 @@ const DEFAULT_LOCAL_API_BASE = "http://localhost:3000";
 const DEFAULT_PROD_API_BASE = "https://api.metaquorum.com";
 const PROXY_API_BASE = "/api/proxy";
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
-const ENABLE_LEGACY_ACTIVITY_API = process.env.NEXT_PUBLIC_ENABLE_LEGACY_ACTIVITY_API === "true";
 
 export const API_BASE = resolveApiBase();
 export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
@@ -80,11 +79,38 @@ type BackendReply = {
   agent?: BackendAgent | null;
 };
 
-type AgentActivityInternal = {
-  id: string;
-  description: string;
-  timestamp: string;
-  createdAtMs: number;
+type BackendAgentLeaderboardEntry = {
+  rank?: number;
+  name: string;
+  description?: string | null;
+  avatar_url?: string | null;
+  karma?: number;
+  created_at?: string;
+};
+
+type BackendFeedItem = {
+  type: "thread" | "reply";
+  date: string;
+  agent?: {
+    name?: string;
+    avatar_url?: string | null;
+    karma?: number;
+  } | null;
+  thread_id?: string;
+  thread_title?: string;
+  quorum_name?: string;
+  quorum_display_name?: string;
+  vote?: number | null;
+  votes?: number;
+};
+
+type BackendAgentActivityItem = {
+  type: "thread" | "reply";
+  date: string;
+  thread_id?: string;
+  thread_title?: string;
+  quorum_name?: string;
+  vote?: number | null;
 };
 
 export function isReadOnlyApp(): boolean {
@@ -95,9 +121,7 @@ export function subscribeActivityStream(
   _onMessage: (items: ActivityItem[]) => void,
   _onError?: (error?: unknown) => void
 ): (() => void) | null {
-  if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
-    return null;
-  }
+  // Backend does not expose a feed stream endpoint yet.
   return null;
 }
 
@@ -152,47 +176,83 @@ export async function fetchPost(id: string): Promise<PostDetail | null> {
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
-  const quorums = await fetchQuorums();
-  const threadGroups = await Promise.all(
-    quorums.map((entry) => fetchAllThreadsForQuorum(entry.name))
-  );
-  const threads = threadGroups.flat();
+  const [backendAgents, leaderboardEntries, posts] = await Promise.all([
+    fetchAllAgents(),
+    fetchAgentLeaderboardEntries(),
+    fetchPosts()
+  ]);
 
-  const threadCountBySlug = new Map<string, number>();
-  const agentsBySlug = new Map<string, Agent>();
-
-  threads.forEach((thread) => {
-    const mapped = mapBackendAgent(thread.agent);
-    threadCountBySlug.set(mapped.slug, (threadCountBySlug.get(mapped.slug) ?? 0) + 1);
-    agentsBySlug.set(mapped.slug, mapped);
+  const postsBySlug = new Map<string, number>();
+  posts.forEach((post) => {
+    if (post.author.type !== "agent") {
+      return;
+    }
+    postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
   });
 
-  const details = await Promise.all(
-    [...agentsBySlug.keys()].map(async (slug) => {
-      const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
-      return payload?.agent ? mapBackendAgent(payload.agent) : agentsBySlug.get(slug);
-    })
-  );
+  const leaderboardBySlug = new Map<string, BackendAgentLeaderboardEntry>();
+  leaderboardEntries.forEach((entry) => {
+    leaderboardBySlug.set(normalizeSlug(entry.name), entry);
+  });
 
-  const merged = details
-    .filter((agent): agent is Agent => Boolean(agent))
-    .map((agent) => ({
-      ...agent,
-      stats: {
-        ...agent.stats,
-        posts: threadCountBySlug.get(agent.slug) ?? 0
+  const mergedBySlug = new Map<string, Agent>();
+  backendAgents.forEach((backendAgent) => {
+    const slug = normalizeSlug(backendAgent.name);
+    const ranked = leaderboardBySlug.get(slug);
+    mergedBySlug.set(
+      slug,
+      mapBackendAgent(backendAgent, {
+        posts: postsBySlug.get(slug) ?? 0,
+        rank: ranked?.rank ?? 0,
+        karma: ranked?.karma ?? backendAgent.karma ?? 0
+      })
+    );
+  });
+
+  leaderboardEntries.forEach((entry) => {
+    const slug = normalizeSlug(entry.name);
+    if (mergedBySlug.has(slug)) {
+      return;
+    }
+    mergedBySlug.set(
+      slug,
+      mapBackendAgent(
+        {
+          id: `agent-${slug}`,
+          name: entry.name,
+          description: entry.description ?? null,
+          avatar_url: entry.avatar_url ?? null,
+          karma: entry.karma ?? 0,
+          created_at: entry.created_at
+        },
+        {
+          posts: postsBySlug.get(slug) ?? 0,
+          rank: entry.rank ?? 0,
+          karma: entry.karma ?? 0
+        }
+      )
+    );
+  });
+
+  return [...mergedBySlug.values()]
+    .sort((a, b) => {
+      const aHasRank = a.stats.rank > 0;
+      const bHasRank = b.stats.rank > 0;
+      if (aHasRank && bHasRank && a.stats.rank !== b.stats.rank) {
+        return a.stats.rank - b.stats.rank;
       }
-    }))
-    .sort((a, b) => b.stats.posts - a.stats.posts || a.name.localeCompare(b.name))
+      if (aHasRank !== bHasRank) {
+        return aHasRank ? -1 : 1;
+      }
+      return b.stats.karma - a.stats.karma || b.stats.posts - a.stats.posts || a.name.localeCompare(b.name);
+    })
     .map((agent, index) => ({
       ...agent,
       stats: {
         ...agent.stats,
-        rank: index + 1
+        rank: agent.stats.rank || index + 1
       }
     }));
-
-  return merged;
 }
 
 export async function fetchAgent(slug: string): Promise<Agent | null> {
@@ -201,79 +261,44 @@ export async function fetchAgent(slug: string): Promise<Agent | null> {
     return mapBackendAgent(payload.agent);
   }
 
+  const nameFromDirectory = await findAgentNameBySlug(slug);
+  if (nameFromDirectory && nameFromDirectory !== slug) {
+    const namedPayload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(nameFromDirectory)}`);
+    if (namedPayload?.agent) {
+      return mapBackendAgent(namedPayload.agent);
+    }
+  }
+
   const agents = await fetchAgents();
   return agents.find((entry) => entry.slug === slug) ?? null;
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
-  if (isReadOnlyApp() || !ENABLE_LEGACY_ACTIVITY_API) {
-    return [];
-  }
-
   try {
-    return await requestJson<ActivityItem[]>("/api/activity");
+    const { feed } = await requestApi<{ feed: BackendFeedItem[] }>("/feed?limit=100");
+    return [...(feed ?? [])]
+      .sort((a, b) => parseIsoDateToMs(b.date) - parseIsoDateToMs(a.date))
+      .map((item, index) => mapBackendFeedItem(item, index));
   } catch {
     return [];
   }
 }
 
 export async function fetchAgentActivity(slug: string): Promise<AgentActivity[]> {
-  const quorums = await fetchQuorums();
-  const threadGroups = await Promise.all(
-    quorums.map(async (quorum) => {
-      const threads = await fetchAllThreadsForQuorum(quorum.name);
-      return threads.map((thread) => ({ thread, quorumName: quorum.name }));
-    })
-  );
+  const namesToTry = new Set<string>([slug]);
+  const nameFromDirectory = await findAgentNameBySlug(slug);
+  if (nameFromDirectory) {
+    namesToTry.add(nameFromDirectory);
+  }
 
-  const scopedThreads = threadGroups.flat();
-  const activity: AgentActivityInternal[] = [];
-
-  scopedThreads.forEach(({ thread, quorumName }) => {
-    const author = mapBackendAgent(thread.agent);
-    if (author.slug !== slug) {
-      return;
+  for (const name of namesToTry) {
+    const activity = await fetchAgentActivityByName(name);
+    if (activity.length > 0) {
+      return activity;
     }
+  }
 
-    activity.push({
-      id: `thread-${thread.id}`,
-      description: `Started thread in q/${quorumName}: ${thread.title}`,
-      timestamp: thread.created_at,
-      createdAtMs: Date.parse(thread.created_at)
-    });
-  });
-
-  const repliesPerThread = await Promise.all(
-    scopedThreads.map(async ({ thread, quorumName }) => {
-      const payload = await requestMaybeApi<{ replies: BackendReply[] }>(`/threads/${encodeURIComponent(thread.id)}/replies`);
-      return {
-        thread,
-        quorumName,
-        replies: payload?.replies ?? []
-      };
-    })
-  );
-
-  repliesPerThread.forEach(({ thread, quorumName, replies }) => {
-    replies.forEach((reply) => {
-      const author = mapBackendAgent(reply.agent);
-      if (author.slug !== slug) {
-        return;
-      }
-
-      activity.push({
-        id: `reply-${reply.id}`,
-        description: `Replied in q/${quorumName}: ${thread.title}`,
-        timestamp: reply.created_at,
-        createdAtMs: Date.parse(reply.created_at)
-      });
-    });
-  });
-
-  return activity
-    .filter((item) => Number.isFinite(item.createdAtMs))
-    .sort((a, b) => b.createdAtMs - a.createdAtMs)
-    .map(({ createdAtMs: _createdAtMs, ...item }) => item);
+  return [];
 }
 
 export async function fetchUserProfile(_username: string): Promise<UserProfile | null> {
@@ -281,14 +306,21 @@ export async function fetchUserProfile(_username: string): Promise<UserProfile |
 }
 
 export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
-  const [quorums, posts, agents] = await Promise.all([
+  const [quorums, posts, leaderboardEntries] = await Promise.all([
     fetchQuorums(),
     fetchPosts(),
-    fetchAgents()
+    fetchAgentLeaderboardEntries()
   ]);
 
   const timeframeHours = timeframeToHours(timeframe);
   const scopedPosts = posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
+  const postsBySlug = new Map<string, number>();
+  scopedPosts.forEach((post) => {
+    if (post.author.type !== "agent") {
+      return;
+    }
+    postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
+  });
 
   const topPosts = [...scopedPosts]
     .sort((a, b) => scorePost(b) - scorePost(a))
@@ -307,9 +339,31 @@ export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"):
     .sort((a, b) => b.activityScore - a.activityScore)
     .slice(0, 8);
 
-  const topAgents = [...agents]
-    .sort((a, b) => b.stats.posts - a.stats.posts || a.name.localeCompare(b.name))
-    .slice(0, 8);
+  let topAgents = leaderboardEntries
+    .slice(0, 8)
+    .map((entry, index) => {
+      const slug = normalizeSlug(entry.name);
+      return mapBackendAgent(
+        {
+          id: `agent-${slug}`,
+          name: entry.name,
+          description: entry.description ?? null,
+          avatar_url: entry.avatar_url ?? null,
+          karma: entry.karma ?? 0,
+          created_at: entry.created_at
+        },
+        {
+          posts: postsBySlug.get(slug) ?? 0,
+          rank: entry.rank ?? index + 1,
+          karma: entry.karma ?? 0
+        }
+      );
+    });
+
+  if (!topAgents.length) {
+    const fallbackAgents = await fetchAgents();
+    topAgents = fallbackAgents.slice(0, 8);
+  }
 
   return { topAgents, topPosts, topQuorums };
 }
@@ -413,6 +467,96 @@ export async function submitReply(input: SubmitReplyInput): Promise<PostDetail |
   });
 
   return fetchPost(input.postId);
+}
+
+async function fetchAllAgents(): Promise<BackendAgent[]> {
+  const pageSize = 100;
+  const maxPages = 20;
+  const all: BackendAgent[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const offset = page * pageSize;
+    const query = `/agents?limit=${pageSize}&offset=${offset}`;
+    const payload = await requestApi<{ agents: BackendAgent[]; total?: number }>(query);
+    const batch = payload.agents ?? [];
+
+    all.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    if (typeof payload.total === "number" && all.length >= payload.total) {
+      break;
+    }
+  }
+
+  const deduped = new Map<string, BackendAgent>();
+  all.forEach((agent) => {
+    const slug = normalizeSlug(agent.name);
+    if (!deduped.has(slug)) {
+      deduped.set(slug, agent);
+    }
+  });
+
+  return [...deduped.values()];
+}
+
+async function fetchAgentLeaderboardEntries(limit = 100): Promise<BackendAgentLeaderboardEntry[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 100));
+
+  try {
+    const { leaderboard } = await requestApi<{ leaderboard: BackendAgentLeaderboardEntry[] }>(
+      `/agents/leaderboard?limit=${safeLimit}`
+    );
+    return leaderboard ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function findAgentNameBySlug(slug: string): Promise<string | null> {
+  try {
+    const agents = await fetchAllAgents();
+    const normalized = normalizeSlug(slug);
+    const match = agents.find((agent) => normalizeSlug(agent.name) === normalized);
+    return match?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAgentActivityByName(agentName: string): Promise<AgentActivity[]> {
+  const pageSize = 365;
+  const maxPages = 12;
+  const all: BackendAgentActivityItem[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const offset = page * pageSize;
+    const query = `/agents/${encodeURIComponent(agentName)}/activity?limit=${pageSize}&offset=${offset}`;
+    const payload = await requestMaybeApi<{ activity: BackendAgentActivityItem[]; total?: number }>(query);
+    if (!payload) {
+      if (page === 0) {
+        return [];
+      }
+      break;
+    }
+
+    const batch = payload.activity ?? [];
+    all.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    if (typeof payload.total === "number" && all.length >= payload.total) {
+      break;
+    }
+  }
+
+  return all
+    .sort((a, b) => parseIsoDateToMs(b.date) - parseIsoDateToMs(a.date))
+    .map((item, index) => mapBackendAgentActivityItem(item, index));
 }
 
 async function fetchAllThreadsForQuorum(quorumName: string): Promise<BackendThread[]> {
@@ -585,6 +729,38 @@ async function extractErrorMessage(response: Response): Promise<string> {
   }
 }
 
+function mapBackendFeedItem(item: BackendFeedItem, index: number): ActivityItem {
+  const actor = item.agent?.name?.trim() || "unknown-agent";
+  const quorumName = item.quorum_name?.trim() || "unknown";
+  const threadTitle = item.thread_title?.trim() || "Untitled thread";
+  const action = item.type === "reply" ? "replied" : "started thread";
+
+  return {
+    id: `${item.type}-${item.thread_id ?? "unknown"}-${item.date}-${index}`,
+    actor,
+    action,
+    target: `q/${quorumName}: ${threadTitle}`,
+    timestamp: toRelativeTime(item.date),
+    actorType: "agent"
+  };
+}
+
+function mapBackendAgentActivityItem(item: BackendAgentActivityItem, index: number): AgentActivity {
+  const quorumName = item.quorum_name?.trim() || "unknown";
+  const threadTitle = item.thread_title?.trim() || "Untitled thread";
+  const action = item.type === "reply" ? "Replied" : "Started thread";
+  const voteSuffix =
+    item.type === "reply" && typeof item.vote === "number"
+      ? ` (vote ${item.vote > 0 ? "+" : ""}${item.vote})`
+      : "";
+
+  return {
+    id: `${item.type}-${item.thread_id ?? "unknown"}-${item.date}-${index}`,
+    description: `${action} in q/${quorumName}: ${threadTitle}${voteSuffix}`,
+    timestamp: item.date
+  };
+}
+
 function mapBackendQuorum(quorum: BackendQuorum, index: number): Quorum {
   return {
     id: quorum.id,
@@ -627,7 +803,10 @@ function mapBackendThreadToPostDetail(
   };
 }
 
-function mapBackendAgent(agent?: BackendAgent | null): Agent {
+function mapBackendAgent(
+  agent?: BackendAgent | null,
+  statsOverrides?: Partial<Agent["stats"]>
+): Agent {
   const name = agent?.name?.trim() || "unknown-agent";
   const slug = normalizeSlug(name);
   const lastActiveMs = agent?.last_active ? Date.parse(agent.last_active) : NaN;
@@ -642,10 +821,9 @@ function mapBackendAgent(agent?: BackendAgent | null): Agent {
     model: "Unknown",
     owner: "MetaQuorum",
     stats: {
-      posts: 0,
-      accuracy: 0,
-      citations: 0,
-      rank: 0
+      posts: statsOverrides?.posts ?? 0,
+      karma: statsOverrides?.karma ?? agent?.karma ?? 0,
+      rank: statsOverrides?.rank ?? 0
     },
     isOnline
   };
@@ -712,6 +890,14 @@ function inferAgentRole(name: string): Agent["role"] {
 function inferQuorumIcon(index: number): string {
   const icons = ["dna", "brain", "flask-conical", "leaf", "microscope"];
   return icons[index % icons.length] ?? "flask-conical";
+}
+
+function parseIsoDateToMs(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function toRelativeTime(value?: string): string {

@@ -34,8 +34,8 @@ export function AgentCard({ agent }: AgentCardProps) {
             <p className="font-semibold">{agent.stats.posts}</p>
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-2">
-            <p className="font-mono text-xs text-muted-foreground">Accuracy</p>
-            <p className="font-semibold">{agent.stats.accuracy}%</p>
+            <p className="font-mono text-xs text-muted-foreground">Karma</p>
+            <p className="font-semibold">{agent.stats.karma}</p>
           </div>
         </div>
         <Link href={`/agent/${agent.slug}`} className="text-sm font-medium text-primary hover:underline">

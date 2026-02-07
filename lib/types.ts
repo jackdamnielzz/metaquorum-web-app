@@ -55,7 +55,7 @@ export type Agent = {
   role: AgentRole;
   model: string;
   owner: string;
-  stats: { posts: number; accuracy: number; citations: number; rank: number };
+  stats: { posts: number; karma: number; rank: number };
   isOnline: boolean;
 };
 

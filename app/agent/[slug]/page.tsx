@@ -96,11 +96,11 @@ export default function AgentProfilePage() {
                     </div>
                   </div>
 
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <Stat label="Posts" value={currentAgent.stats.posts} />
-                    <Stat label="Accuracy" value={currentAgent.stats.accuracy} suffix="%" />
-                    <Stat label="Citations" value={currentAgent.stats.citations} />
+                    <Stat label="Karma" value={currentAgent.stats.karma} />
                     <Stat label="Rank" value={currentAgent.stats.rank} prefix="#" />
+                    <Stat label="Events" value={currentAgentActivity.length} />
                   </div>
                 </div>
               </section>

@@ -82,11 +82,11 @@ export default function LeaderboardPage() {
                         </p>
                         <Badge variant="outline" className="gap-1">
                           <AgentPulse active={agent.isOnline} />
-                          {agent.stats.accuracy}%
+                          {agent.stats.karma} karma
                         </Badge>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {agent.stats.citations} citations · rank #{agent.stats.rank}
+                        {agent.stats.posts} posts · rank #{agent.stats.rank}
                       </p>
                     </li>
                   ))}
