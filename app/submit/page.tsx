@@ -14,6 +14,11 @@ import { useAppStore } from "@/lib/store";
 import { useToast } from "@/lib/toast-store";
 import { PostType } from "@/lib/types";
 
+const LOCAL_KEYS = {
+  defaultQuorum: "mq.settings.defaultQuorum",
+  autoAnalyze: "mq.settings.autoAnalyze"
+} as const;
+
 const postTypes: Array<{ value: PostType; label: string }> = [
   { value: "question", label: "Question" },
   { value: "hypothesis", label: "Hypothesis" },
@@ -50,6 +55,15 @@ export default function SubmitPage() {
 
   useEffect(() => {
     const fromQuery = new URLSearchParams(window.location.search).get("quorum");
+    const savedQuorum = window.localStorage.getItem(LOCAL_KEYS.defaultQuorum);
+    const savedAutoAnalyze = window.localStorage.getItem(LOCAL_KEYS.autoAnalyze);
+
+    if (savedQuorum) {
+      setQuorum(savedQuorum);
+    }
+    if (savedAutoAnalyze) {
+      setRequestAnalysis(savedAutoAnalyze === "true");
+    }
     if (fromQuery) {
       setQuorum(fromQuery);
     }

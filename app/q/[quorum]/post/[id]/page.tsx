@@ -15,6 +15,7 @@ import { PageTransition } from "@/components/shared/page-transition";
 import { ReplyBox } from "@/components/shared/reply-box";
 import { VoteButton } from "@/components/shared/vote-button";
 import { Button } from "@/components/ui/button";
+import { subscribeAnalysisEventsStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/lib/toast-store";
 
@@ -100,11 +101,48 @@ export default function PostPage() {
     if (currentRun.status !== "queued" && currentRun.status !== "running") {
       return;
     }
+    const liveUpdatesSetting =
+      typeof window !== "undefined" ? window.localStorage.getItem("mq.settings.liveUpdates") : null;
+    if (liveUpdatesSetting === "false") {
+      return;
+    }
 
-    const interval = setInterval(() => {
-      refreshCurrentAnalysis();
-    }, 1400);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (interval) {
+        return;
+      }
+      interval = setInterval(() => {
+        void refreshCurrentAnalysis();
+      }, 1400);
+    };
+
+    const stopPolling = () => {
+      if (!interval) {
+        return;
+      }
+      clearInterval(interval);
+      interval = null;
+    };
+
+    const streamCleanup = subscribeAnalysisEventsStream(
+      currentRun.id,
+      () => {
+        void refreshCurrentAnalysis();
+      },
+      () => {
+        startPolling();
+      }
+    );
+
+    if (!streamCleanup) {
+      startPolling();
+    }
+
+    return () => {
+      streamCleanup?.();
+      stopPolling();
+    };
   }, [analysisRuns, currentAnalysisRunId, refreshCurrentAnalysis]);
 
   return (

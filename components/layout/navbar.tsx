@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
+import { subscribeActivityStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -51,10 +52,47 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
 
   useEffect(() => {
     loadActivity();
-    const timer = setInterval(() => {
-      void loadActivity();
-    }, 12000);
-    return () => clearInterval(timer);
+    const liveUpdatesSetting =
+      typeof window !== "undefined" ? window.localStorage.getItem("mq.settings.liveUpdates") : null;
+    if (liveUpdatesSetting === "false") {
+      return;
+    }
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (timer) {
+        return;
+      }
+      timer = setInterval(() => {
+        void loadActivity();
+      }, 12000);
+    };
+
+    const stopPolling = () => {
+      if (!timer) {
+        return;
+      }
+      clearInterval(timer);
+      timer = null;
+    };
+
+    const streamCleanup = subscribeActivityStream(
+      () => {
+        void loadActivity();
+      },
+      () => {
+        startPolling();
+      }
+    );
+
+    if (!streamCleanup) {
+      startPolling();
+    }
+
+    return () => {
+      streamCleanup?.();
+      stopPolling();
+    };
   }, [loadActivity]);
 
   return (
@@ -76,6 +114,9 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/explore">Explore</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/onboarding">Onboarding</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/about">About</Link>
@@ -109,7 +150,13 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                   <Link href="/explore">Explore</Link>
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/onboarding">Onboarding</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
                   <Link href="/submit">New post</Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link href="/settings">Settings</Link>
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start">
                   <Link href="/about">About</Link>
@@ -196,10 +243,10 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                   <Button asChild variant="ghost" size="sm" className="w-full justify-start">
                     <Link href="/submit">New post</Link>
                   </Button>
+                  <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+                    <Link href="/settings">Settings</Link>
+                  </Button>
                 </div>
-                <Badge variant="outline" className="mt-2 w-full justify-center text-[11px]">
-                  Settings coming soon
-                </Badge>
               </div>
             ) : null}
           </div>

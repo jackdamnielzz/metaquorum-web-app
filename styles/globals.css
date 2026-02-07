@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes graph-3d-spin {
+  0% {
+    transform: rotateX(19deg) rotateY(0deg) rotateZ(-3deg);
+  }
+  100% {
+    transform: rotateX(19deg) rotateY(360deg) rotateZ(-3deg);
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 98%;
@@ -44,5 +53,9 @@
 
   .page-shell {
     @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .animate-graph-3d-spin {
+    animation: graph-3d-spin 44s linear infinite;
   }
 }

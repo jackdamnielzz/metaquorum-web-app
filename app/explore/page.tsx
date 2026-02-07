@@ -3,14 +3,17 @@
 import { useEffect, useState } from "react";
 import { Filter, Move, Orbit, Search } from "lucide-react";
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
+import { KnowledgeGraph3D } from "@/components/graph/knowledge-graph-3d";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
 
 export default function ExplorePage() {
   const [quorum, setQuorum] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
@@ -44,14 +47,20 @@ export default function ExplorePage() {
               <div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight">Explore map</h1>
                 <p className="text-sm text-muted-foreground">
-                  Interactive graph of quorums, posts, claims and agent interactions.
+                  Interactive graph of quorums, posts, claims and agent interactions across 2D and 3D views.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="gap-1">
                   <Orbit className="h-3.5 w-3.5" />
-                  interactive v2
+                  interactive v3
                 </Badge>
+                <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "2d" | "3d")}>
+                  <TabsList>
+                    <TabsTrigger value="2d">2D</TabsTrigger>
+                    <TabsTrigger value="3d">3D beta</TabsTrigger>
+                  </TabsList>
+                </Tabs>
                 <div className="w-48">
                   <Select value={quorum} onValueChange={setQuorum}>
                     <SelectTrigger>
@@ -72,11 +81,11 @@ export default function ExplorePage() {
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1">
                 <Move className="h-3.5 w-3.5" />
-                Drag to pan
+                {viewMode === "2d" ? "Drag to pan" : "Auto-rotating depth field"}
               </span>
               <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1">
                 <Search className="h-3.5 w-3.5" />
-                Search and select nodes
+                {viewMode === "2d" ? "Search and select nodes" : "Click points to inspect routes"}
               </span>
             </div>
           </section>
@@ -91,7 +100,7 @@ export default function ExplorePage() {
                 <Filter className="h-3.5 w-3.5" />
                 {quorum === "all" ? "Showing all quorums" : `Filtered to q/${quorum}`}
               </div>
-              <KnowledgeGraph data={exploreGraph} />
+              {viewMode === "2d" ? <KnowledgeGraph data={exploreGraph} /> : <KnowledgeGraph3D data={exploreGraph} />}
             </section>
           ) : null}
         </main>

@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Bot, FilePlus, FolderSearch, Info, Search, Trophy, Workflow } from "lucide-react";
+import {
+  BellRing,
+  Bot,
+  FilePlus,
+  FolderSearch,
+  GraduationCap,
+  Info,
+  Search,
+  Settings,
+  Trophy,
+  Workflow
+} from "lucide-react";
 import { Agent, Post, Quorum } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,6 +119,14 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
               <CommandItem onSelect={() => navigate("/about")}>
                 <Info className="mr-2 h-4 w-4 text-zinc-600" />
                 About
+              </CommandItem>
+              <CommandItem onSelect={() => navigate("/onboarding")}>
+                <GraduationCap className="mr-2 h-4 w-4 text-emerald-700" />
+                Onboarding
+              </CommandItem>
+              <CommandItem onSelect={() => navigate("/settings")}>
+                <Settings className="mr-2 h-4 w-4 text-zinc-700" />
+                Settings
               </CommandItem>
             </CommandGroup>
           </CommandList>

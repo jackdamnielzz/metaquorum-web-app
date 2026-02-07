@@ -24,6 +24,7 @@ import {
 } from "@/lib/mock-data";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 
 type SubmitPostInput = Partial<Post> & Pick<Post, "title" | "body" | "quorum">;
 type SubmitReplyInput = {
@@ -60,289 +61,560 @@ const db: MockDb = {
 const runTimers = new Map<string, Array<ReturnType<typeof setTimeout>>>();
 let activitySeed = 0;
 
+export function subscribeActivityStream(
+  onMessage: (items: ActivityItem[]) => void,
+  onError?: (error?: unknown) => void
+): (() => void) | null {
+  return createEventSourceStream("/api/activity/stream", (payload) => {
+    if (Array.isArray(payload)) {
+      onMessage(payload as ActivityItem[]);
+      return;
+    }
+    if (payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)) {
+      onMessage((payload as { items: ActivityItem[] }).items);
+      return;
+    }
+    onMessage([payload as ActivityItem]);
+  }, onError);
+}
+
+export function subscribeAnalysisEventsStream(
+  runId: string,
+  onMessage: (events: AnalysisEvent[]) => void,
+  onError?: (error?: unknown) => void
+): (() => void) | null {
+  return createEventSourceStream(`/api/analyze/runs/${encodeURIComponent(runId)}/events/stream`, (payload) => {
+    if (Array.isArray(payload)) {
+      onMessage(payload as AnalysisEvent[]);
+      return;
+    }
+    if (payload && typeof payload === "object" && Array.isArray((payload as { events?: unknown }).events)) {
+      onMessage((payload as { events: AnalysisEvent[] }).events);
+      return;
+    }
+    onMessage([payload as AnalysisEvent]);
+  }, onError);
+}
+
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
-  const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Health check failed with status ${res.status}`);
+  try {
+    return await requestJson<{ status: string; timestamp?: string }>("/health", { cache: "no-store" });
+  } catch {
+    return requestJson<{ status: string; timestamp?: string }>("/api/health", { cache: "no-store" });
   }
-  return res.json();
 }
 
 export async function fetchQuorums(): Promise<Quorum[]> {
-  return deepCopy(db.quorums);
+  return withBackendFallback(
+    () => requestJson<Quorum[]>("/api/quorums"),
+    () => deepCopy(db.quorums)
+  );
 }
 
 export async function fetchPosts(quorum?: string): Promise<Post[]> {
-  const filteredPosts = quorum ? db.posts.filter((post) => post.quorum === quorum) : db.posts;
-  return deepCopy(filteredPosts.map(stripReplies));
+  return withBackendFallback(
+    async () => {
+      const path = quorum ? `/api/quorums/${encodeURIComponent(quorum)}/posts` : "/api/posts";
+      const posts = await requestJson<Post[]>(path);
+      return posts.map(withPostDefaults);
+    },
+    () => {
+      const filteredPosts = quorum ? db.posts.filter((post) => post.quorum === quorum) : db.posts;
+      return deepCopy(filteredPosts.map(stripReplies));
+    }
+  );
 }
 
 export async function fetchPost(id: string): Promise<PostDetail | null> {
-  const post = db.posts.find((entry) => entry.id === id);
-  return post ? deepCopy(post) : null;
+  return withBackendFallback(
+    async () => {
+      const post = await requestMaybeJson<PostDetail>(`/api/posts/${encodeURIComponent(id)}`);
+      return post ? withPostDetailDefaults(post) : null;
+    },
+    () => {
+      const post = db.posts.find((entry) => entry.id === id);
+      return post ? deepCopy(post) : null;
+    }
+  );
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
-  return deepCopy(db.agents);
+  return withBackendFallback(
+    () => requestJson<Agent[]>("/api/agents"),
+    () => deepCopy(db.agents)
+  );
 }
 
 export async function fetchAgent(slug: string): Promise<Agent | null> {
-  const agent = db.agents.find((entry) => entry.slug === slug);
-  return agent ? deepCopy(agent) : null;
+  return withBackendFallback(
+    async () => {
+      const bySlug = await requestMaybeJson<Agent>(`/api/agents/${encodeURIComponent(slug)}`);
+      if (bySlug) {
+        return bySlug;
+      }
+      const agents = await requestJson<Agent[]>("/api/agents");
+      return agents.find((entry) => entry.slug === slug) ?? null;
+    },
+    () => {
+      const agent = db.agents.find((entry) => entry.slug === slug);
+      return agent ? deepCopy(agent) : null;
+    }
+  );
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
-  refreshMockActivity();
-  return deepCopy(db.activity);
+  return withBackendFallback(
+    () => requestJson<ActivityItem[]>("/api/activity"),
+    () => {
+      refreshMockActivity();
+      return deepCopy(db.activity);
+    }
+  );
 }
 
 export async function fetchAgentActivity(slug: string): Promise<AgentActivity[]> {
-  return deepCopy(db.agentActivity[slug] ?? []);
+  return withBackendFallback(
+    () => requestJson<AgentActivity[]>(`/api/agents/${encodeURIComponent(slug)}/activity`),
+    () => deepCopy(db.agentActivity[slug] ?? [])
+  );
 }
 
 export async function fetchUserProfile(username: string): Promise<UserProfile | null> {
-  const user = db.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
-  if (!user) {
-    return null;
-  }
-  return deepCopy(buildUserProfile(user));
+  return withBackendFallback(
+    () => requestMaybeJson<UserProfile>(`/api/users/${encodeURIComponent(username)}`),
+    () => {
+      const user = db.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
+      if (!user) {
+        return null;
+      }
+      return deepCopy(buildUserProfile(user));
+    }
+  );
 }
 
 export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
-  const timeframeHours = timeframeToHours(timeframe);
-  const scopedPosts = db.posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
+  return withBackendFallback(
+    () => requestJson<LeaderboardData>(`/api/leaderboard?timeframe=${encodeURIComponent(timeframe)}`),
+    () => {
+      const timeframeHours = timeframeToHours(timeframe);
+      const scopedPosts = db.posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
 
-  const topPosts = [...scopedPosts]
-    .map(stripReplies)
-    .sort((a, b) => scorePost(b) - scorePost(a))
-    .slice(0, 8);
+      const topPosts = [...scopedPosts]
+        .map(stripReplies)
+        .sort((a, b) => scorePost(b) - scorePost(a))
+        .slice(0, 8);
 
-  const topQuorums = db.quorums
-    .map((quorum) => {
-      const related = scopedPosts.filter((post) => post.quorum === quorum.name);
-      const activityScore = related.reduce(
-        (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
-        0
-      );
-      return { quorum, activityScore };
-    })
-    .filter((entry) => entry.activityScore > 0)
-    .sort((a, b) => b.activityScore - a.activityScore);
+      const topQuorums = db.quorums
+        .map((quorum) => {
+          const related = scopedPosts.filter((post) => post.quorum === quorum.name);
+          const activityScore = related.reduce(
+            (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
+            0
+          );
+          return { quorum, activityScore };
+        })
+        .filter((entry) => entry.activityScore > 0)
+        .sort((a, b) => b.activityScore - a.activityScore);
 
-  const topAgents = buildAgentLeaderboard(scopedPosts).slice(0, 6);
+      const topAgents = buildAgentLeaderboard(scopedPosts).slice(0, 6);
 
-  return deepCopy({ topAgents, topPosts, topQuorums });
+      return deepCopy({ topAgents, topPosts, topQuorums });
+    }
+  );
 }
 
 export async function fetchExploreGraph(quorum?: string): Promise<ExploreGraphData> {
-  const posts = quorum ? db.posts.filter((entry) => entry.quorum === quorum) : db.posts;
-  const nodes = new Map<string, ExploreNode>();
-  const links: ExploreLink[] = [];
+  return withBackendFallback(
+    async () => {
+      const suffix = quorum ? `?quorum=${encodeURIComponent(quorum)}` : "";
+      return requestJson<ExploreGraphData>(`/api/explore${suffix}`);
+    },
+    () => {
+      const posts = quorum ? db.posts.filter((entry) => entry.quorum === quorum) : db.posts;
+      const nodes = new Map<string, ExploreNode>();
+      const links: ExploreLink[] = [];
 
-  for (const post of posts) {
-    const quorumKey = `q:${post.quorum}`;
-    if (!nodes.has(quorumKey)) {
-      const q = db.quorums.find((entry) => entry.name === post.quorum);
-      nodes.set(quorumKey, {
-        id: quorumKey,
-        label: q?.displayName ?? post.quorum,
-        type: "quorum",
-        quorum: post.quorum
-      });
+      for (const post of posts) {
+        const quorumKey = `q:${post.quorum}`;
+        if (!nodes.has(quorumKey)) {
+          const q = db.quorums.find((entry) => entry.name === post.quorum);
+          nodes.set(quorumKey, {
+            id: quorumKey,
+            label: q?.displayName ?? post.quorum,
+            type: "quorum",
+            quorum: post.quorum
+          });
+        }
+
+        const postKey = `p:${post.id}`;
+        nodes.set(postKey, {
+          id: postKey,
+          label: post.title,
+          type: "post",
+          quorum: post.quorum,
+          confidence: post.consensus
+        });
+        links.push({ source: quorumKey, target: postKey });
+
+        const authorKey =
+          post.author.type === "agent"
+            ? `a:${post.author.slug}`
+            : `a:user:${post.author.username}`;
+        if (!nodes.has(authorKey)) {
+          nodes.set(authorKey, {
+            id: authorKey,
+            label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
+            type: "agent",
+            quorum: post.quorum
+          });
+        }
+        links.push({ source: authorKey, target: postKey });
+
+        post.claims.forEach((claim) => {
+          const claimKey = `c:${claim.id}`;
+          nodes.set(claimKey, {
+            id: claimKey,
+            label: claim.text,
+            type: "claim",
+            quorum: post.quorum,
+            confidence: claim.consensus
+          });
+          links.push({ source: postKey, target: claimKey });
+        });
+      }
+
+      return deepCopy({ nodes: [...nodes.values()], links });
     }
-
-    const postKey = `p:${post.id}`;
-    nodes.set(postKey, {
-      id: postKey,
-      label: post.title,
-      type: "post",
-      quorum: post.quorum,
-      confidence: post.consensus
-    });
-    links.push({ source: quorumKey, target: postKey });
-
-    const authorKey =
-      post.author.type === "agent"
-        ? `a:${post.author.slug}`
-        : `a:user:${post.author.username}`;
-    if (!nodes.has(authorKey)) {
-      nodes.set(authorKey, {
-        id: authorKey,
-        label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
-        type: "agent",
-        quorum: post.quorum
-      });
-    }
-    links.push({ source: authorKey, target: postKey });
-
-    post.claims.forEach((claim) => {
-      const claimKey = `c:${claim.id}`;
-      nodes.set(claimKey, {
-        id: claimKey,
-        label: claim.text,
-        type: "claim",
-        quorum: post.quorum,
-        confidence: claim.consensus
-      });
-      links.push({ source: postKey, target: claimKey });
-    });
-  }
-
-  return deepCopy({ nodes: [...nodes.values()], links });
+  );
 }
 
 export async function fetchPostAnalysisRuns(postId: string): Promise<AnalysisRun[]> {
-  const runs = db.analysisRuns
-    .filter((run) => run.postId === postId)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  return deepCopy(runs);
+  return withBackendFallback(
+    () => requestJson<AnalysisRun[]>(`/api/posts/${encodeURIComponent(postId)}/analyze/runs`),
+    () => {
+      const runs = db.analysisRuns
+        .filter((run) => run.postId === postId)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      return deepCopy(runs);
+    }
+  );
 }
 
 export async function fetchAnalysisRun(runId: string): Promise<AnalysisRun | null> {
-  const run = db.analysisRuns.find((entry) => entry.id === runId);
-  return run ? deepCopy(run) : null;
+  return withBackendFallback(
+    () => requestMaybeJson<AnalysisRun>(`/api/analyze/runs/${encodeURIComponent(runId)}`),
+    () => {
+      const run = db.analysisRuns.find((entry) => entry.id === runId);
+      return run ? deepCopy(run) : null;
+    }
+  );
 }
 
 export async function fetchAnalysisEvents(runId: string): Promise<AnalysisEvent[]> {
-  const events = db.analysisEvents[runId] ?? [];
-  return deepCopy(events);
+  return withBackendFallback(
+    () => requestJson<AnalysisEvent[]>(`/api/analyze/runs/${encodeURIComponent(runId)}/events`),
+    () => {
+      const events = db.analysisEvents[runId] ?? [];
+      return deepCopy(events);
+    }
+  );
 }
 
 export async function startAnalysisRun(postId: string): Promise<AnalysisRun> {
-  const startedAt = new Date().toISOString();
-  const run: AnalysisRun = {
-    id: createId("run"),
-    postId,
-    status: "queued",
-    progress: 0,
-    agents: pickAnalysisAgents(),
-    startedAt,
-    updatedAt: startedAt
-  };
+  return withBackendFallback(
+    () =>
+      requestJson<AnalysisRun>(`/api/posts/${encodeURIComponent(postId)}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "standard" })
+      }),
+    () => {
+      const startedAt = new Date().toISOString();
+      const run: AnalysisRun = {
+        id: createId("run"),
+        postId,
+        status: "queued",
+        progress: 0,
+        agents: pickAnalysisAgents(),
+        startedAt,
+        updatedAt: startedAt
+      };
 
-  db.analysisRuns.unshift(run);
-  db.analysisEvents[run.id] = [];
-  appendAnalysisEvent(run.id, {
-    type: "status",
-    message: "Analysis requested and queued.",
-    progress: 0
-  });
-  simulateAnalysisRun(run.id);
-  return deepCopy(run);
+      db.analysisRuns.unshift(run);
+      db.analysisEvents[run.id] = [];
+      appendAnalysisEvent(run.id, {
+        type: "status",
+        message: "Analysis requested and queued.",
+        progress: 0
+      });
+      simulateAnalysisRun(run.id);
+      return deepCopy(run);
+    }
+  );
 }
 
 export async function cancelAnalysisRun(runId: string): Promise<AnalysisRun | null> {
-  const run = db.analysisRuns.find((entry) => entry.id === runId);
-  if (!run) {
-    return null;
-  }
-  if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
-    return deepCopy(run);
-  }
+  return withBackendFallback(
+    () =>
+      requestMaybeJson<AnalysisRun>(`/api/analyze/runs/${encodeURIComponent(runId)}/cancel`, {
+        method: "POST"
+      }),
+    () => {
+      const run = db.analysisRuns.find((entry) => entry.id === runId);
+      if (!run) {
+        return null;
+      }
+      if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
+        return deepCopy(run);
+      }
 
-  clearRunTimers(runId);
-  updateRun(runId, {
-    status: "cancelled",
-    updatedAt: new Date().toISOString()
-  });
-  appendAnalysisEvent(runId, {
-    type: "status",
-    message: "Analysis was cancelled.",
-    progress: run.progress
-  });
-  return deepCopy(run);
+      clearRunTimers(runId);
+      updateRun(runId, {
+        status: "cancelled",
+        updatedAt: new Date().toISOString()
+      });
+      appendAnalysisEvent(runId, {
+        type: "status",
+        message: "Analysis was cancelled.",
+        progress: run.progress
+      });
+      return deepCopy(run);
+    }
+  );
 }
 
 export async function vote(postId: string): Promise<Post | null> {
-  const post = db.posts.find((entry) => entry.id === postId);
-  if (!post) {
-    return null;
-  }
+  return withBackendFallback(
+    async () => {
+      const updated = await requestMaybeJson<Post>(`/api/posts/${encodeURIComponent(postId)}/vote`, {
+        method: "POST"
+      });
+      if (updated) {
+        return withPostDefaults(updated);
+      }
+      const refreshed = await requestMaybeJson<Post>(`/api/posts/${encodeURIComponent(postId)}`);
+      return refreshed ? withPostDefaults(refreshed) : null;
+    },
+    () => {
+      const post = db.posts.find((entry) => entry.id === postId);
+      if (!post) {
+        return null;
+      }
 
-  const hasVoted = db.votedPostIds.has(postId);
-  db.votedPostIds[hasVoted ? "delete" : "add"](postId);
-  post.votes += hasVoted ? -1 : 1;
+      const hasVoted = db.votedPostIds.has(postId);
+      db.votedPostIds[hasVoted ? "delete" : "add"](postId);
+      post.votes += hasVoted ? -1 : 1;
 
-  return deepCopy(stripReplies(post));
+      return deepCopy(stripReplies(post));
+    }
+  );
 }
 
 export async function submitPost(data: SubmitPostInput): Promise<Post> {
-  const now = "just now";
-  const newPost: PostDetail = {
-    id: createId("post"),
-    title: data.title,
-    body: data.body,
-    quorum: data.quorum,
-    type: data.type ?? "question",
-    author: data.author ?? {
-      id: "u-current",
-      type: "human",
-      username: "you"
+  return withBackendFallback(
+    async () => {
+      const post = await requestJson<Post>("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      return withPostDefaults(post);
     },
-    votes: 0,
-    consensus: 0,
-    claims: [],
-    citations: [],
-    tags: data.tags ?? [],
-    replyCount: 0,
-    createdAt: now,
-    replies: []
-  };
+    () => {
+      const now = "just now";
+      const newPost: PostDetail = {
+        id: createId("post"),
+        title: data.title,
+        body: data.body,
+        quorum: data.quorum,
+        type: data.type ?? "question",
+        author: data.author ?? {
+          id: "u-current",
+          type: "human",
+          username: "you"
+        },
+        votes: 0,
+        consensus: 0,
+        claims: [],
+        citations: [],
+        tags: data.tags ?? [],
+        replyCount: 0,
+        createdAt: now,
+        replies: []
+      };
 
-  db.posts.unshift(newPost);
+      db.posts.unshift(newPost);
 
-  const quorum = db.quorums.find((entry) => entry.name === newPost.quorum);
-  if (quorum) {
-    quorum.postCount += 1;
-  }
+      const quorum = db.quorums.find((entry) => entry.name === newPost.quorum);
+      if (quorum) {
+        quorum.postCount += 1;
+      }
 
-  if (newPost.author.type === "human") {
-    ensureUserProfile(newPost.author.id, newPost.author.username);
-  }
+      if (newPost.author.type === "human") {
+        ensureUserProfile(newPost.author.id, newPost.author.username);
+      }
 
-  return deepCopy(stripReplies(newPost));
+      return deepCopy(stripReplies(newPost));
+    }
+  );
 }
 
 export async function submitReply(input: SubmitReplyInput): Promise<PostDetail | null> {
-  const post = db.posts.find((entry) => entry.id === input.postId);
-  if (!post) {
+  return withBackendFallback(
+    async () => {
+      const updated = await requestMaybeJson<PostDetail>(`/api/posts/${encodeURIComponent(input.postId)}/replies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body: input.body,
+          parentId: input.parentId,
+          author: input.author
+        })
+      });
+      return updated ? withPostDetailDefaults(updated) : null;
+    },
+    () => {
+      const post = db.posts.find((entry) => entry.id === input.postId);
+      if (!post) {
+        return null;
+      }
+
+      const author =
+        input.author ??
+        ({
+          id: "u-current",
+          type: "human",
+          username: "you"
+        } as const);
+
+      if (author.type === "human") {
+        ensureUserProfile(author.id, author.username);
+      }
+
+      const reply = {
+        id: createId("reply"),
+        body: input.body.trim(),
+        author,
+        votes: 0,
+        citations: [],
+        parentId: input.parentId ?? null,
+        children: [],
+        createdAt: "just now"
+      };
+
+      if (input.parentId) {
+        const inserted = insertReplyInTree(post.replies, input.parentId, reply);
+        if (!inserted) {
+          post.replies.push(reply);
+        }
+      } else {
+        post.replies.push(reply);
+      }
+
+      post.replyCount += 1;
+      return deepCopy(post);
+    }
+  );
+}
+
+function createEventSourceStream(
+  path: string,
+  onPayload: (payload: unknown) => void,
+  onError?: (error?: unknown) => void
+): (() => void) | null {
+  if (
+    USE_MOCK_API ||
+    typeof window === "undefined" ||
+    typeof EventSource === "undefined"
+  ) {
     return null;
   }
 
-  const author =
-    input.author ??
-    ({
-      id: "u-current",
-      type: "human",
-      username: "you"
-    } as const);
-
-  if (author.type === "human") {
-    ensureUserProfile(author.id, author.username);
-  }
-
-  const reply = {
-    id: createId("reply"),
-    body: input.body.trim(),
-    author,
-    votes: 0,
-    citations: [],
-    parentId: input.parentId ?? null,
-    children: [],
-    createdAt: "just now"
+  const stream = new EventSource(`${API_BASE}${path}`);
+  stream.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      onPayload(payload);
+    } catch (error) {
+      onError?.(error);
+    }
+  };
+  stream.onerror = (error) => {
+    onError?.(error);
+    stream.close();
   };
 
-  if (input.parentId) {
-    const inserted = insertReplyInTree(post.replies, input.parentId, reply);
-    if (!inserted) {
-      post.replies.push(reply);
-    }
-  } else {
-    post.replies.push(reply);
+  return () => stream.close();
+}
+
+async function withBackendFallback<T>(
+  backendCall: () => Promise<T>,
+  fallback: () => T | Promise<T>
+): Promise<T> {
+  if (USE_MOCK_API) {
+    return fallback();
   }
 
-  post.replyCount += 1;
-  return deepCopy(post);
+  try {
+    return await backendCall();
+  } catch {
+    return fallback();
+  }
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    cache: init?.cache ?? "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  if (response.status === 204) {
+    return null as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function requestMaybeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    cache: init?.cache ?? "no-store"
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function withPostDefaults(post: Post): Post {
+  return {
+    ...post,
+    claims: post.claims ?? [],
+    citations: post.citations ?? [],
+    tags: post.tags ?? [],
+    replyCount: post.replyCount ?? 0
+  };
+}
+
+function withPostDetailDefaults(post: PostDetail): PostDetail {
+  return {
+    ...withPostDefaults(post),
+    replies: post.replies ?? []
+  };
 }
 
 function ensureUserProfile(userId: string, username: string) {
