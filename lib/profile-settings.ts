@@ -8,6 +8,7 @@ export type DefaultSort = "hot" | "new" | "consensus";
 export type ProfileSettings = {
   username: string;
   displayName: string;
+  avatarDataUrl: string;
   headline: string;
   bio: string;
   focusTags: string[];
@@ -29,6 +30,7 @@ export type ProfileSettings = {
 export const PROFILE_SETTINGS_KEYS = {
   username: "mq.settings.username",
   displayName: "mq.settings.displayName",
+  avatarDataUrl: "mq.settings.avatarDataUrl",
   headline: "mq.settings.headline",
   bio: "mq.settings.bio",
   focusTags: "mq.settings.focusTags",
@@ -50,6 +52,7 @@ export const PROFILE_SETTINGS_KEYS = {
 export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = {
   username: "eduard",
   displayName: "Eduard",
+  avatarDataUrl: "",
   headline: "Human researcher",
   bio: "Building evidence-backed threads for translational research.",
   focusTags: ["longevity", "trial-design"],
@@ -75,6 +78,7 @@ export function loadProfileSettings(): ProfileSettings {
 
   const usernameRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.username);
   const displayNameRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.displayName);
+  const avatarDataUrlRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.avatarDataUrl);
   const headlineRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.headline);
   const bioRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.bio);
   const tagsRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.focusTags);
@@ -123,6 +127,7 @@ export function loadProfileSettings(): ProfileSettings {
   return {
     username,
     displayName,
+    avatarDataUrl: avatarDataUrlRaw ?? DEFAULT_PROFILE_SETTINGS.avatarDataUrl,
     headline,
     bio,
     focusTags,
@@ -151,6 +156,7 @@ export function saveProfileSettings(settings: ProfileSettings) {
 
   window.localStorage.setItem(PROFILE_SETTINGS_KEYS.username, normalized.username);
   window.localStorage.setItem(PROFILE_SETTINGS_KEYS.displayName, normalized.displayName);
+  window.localStorage.setItem(PROFILE_SETTINGS_KEYS.avatarDataUrl, normalized.avatarDataUrl);
   window.localStorage.setItem(PROFILE_SETTINGS_KEYS.headline, normalized.headline);
   window.localStorage.setItem(PROFILE_SETTINGS_KEYS.bio, normalized.bio);
   window.localStorage.setItem(PROFILE_SETTINGS_KEYS.focusTags, normalized.focusTags.join(","));
@@ -175,10 +181,32 @@ export function normalizeProfileSettings(input: ProfileSettings): ProfileSetting
     ...input,
     username: sanitizeUsername(input.username),
     displayName: normalizeText(input.displayName, DEFAULT_PROFILE_SETTINGS.displayName),
+    avatarDataUrl: normalizeAvatarDataUrl(input.avatarDataUrl),
     headline: normalizeText(input.headline, DEFAULT_PROFILE_SETTINGS.headline),
     bio: normalizeText(input.bio, DEFAULT_PROFILE_SETTINGS.bio),
     focusTags: dedupeTags(input.focusTags)
   };
+}
+
+export function profileCompletion(settings: ProfileSettings): { value: number; total: number } {
+  const checks = [
+    Boolean(settings.avatarDataUrl),
+    settings.displayName.trim().length >= 2,
+    settings.username.trim().length >= 3,
+    settings.headline.trim().length >= 6,
+    settings.bio.trim().length >= 20,
+    settings.focusTags.length >= 2,
+    settings.profileVisibility !== "private"
+  ];
+  return {
+    value: checks.filter(Boolean).length,
+    total: checks.length
+  };
+}
+
+export function profileSettingsSignature(settings: ProfileSettings): string {
+  const normalized = normalizeProfileSettings(settings);
+  return JSON.stringify(normalized);
 }
 
 export function sanitizeUsername(value: string): string {
@@ -230,6 +258,17 @@ function parseTags(value: string | null, fallback: string[]): string[] {
     return fallback;
   }
   return dedupeTags(value.split(","));
+}
+
+function normalizeAvatarDataUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!trimmed.startsWith("data:image/")) {
+    return "";
+  }
+  return trimmed;
 }
 
 function dedupeTags(tags: string[]): string[] {

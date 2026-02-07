@@ -8,7 +8,7 @@ import { CommandSearch } from "@/components/shared/command-search";
 import { HealthIndicator } from "@/components/shared/health-indicator";
 import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -241,6 +241,7 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
               aria-expanded={showAccount}
             >
               <Avatar className={`h-10 w-10 border ${profileAccentClasses(profile.accent)}`}>
+                {profile.avatarDataUrl ? <AvatarImage src={profile.avatarDataUrl} alt={profile.displayName} /> : null}
                 <AvatarFallback className={`font-medium ${profileAccentClasses(profile.accent)}`}>
                   {profileInitials(profile.displayName)}
                 </AvatarFallback>
