@@ -1,125 +1,489 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ExploreGraphData, ExploreNodeType } from "@/lib/types";
+import { Search, SlidersHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import { ExploreGraphData, ExploreNode, ExploreNodeType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type KnowledgeGraphProps = {
   data: ExploreGraphData;
   className?: string;
 };
 
-type PositionedNode = {
-  id: string;
-  label: string;
-  type: ExploreNodeType;
+type PositionedNode = ExploreNode & {
   x: number;
   y: number;
 };
 
-const WIDTH = 900;
-const HEIGHT = 420;
+type Viewport = {
+  x: number;
+  y: number;
+  scale: number;
+};
+
+type DragState = {
+  x: number;
+  y: number;
+} | null;
+
+const WIDTH = 1200;
+const HEIGHT = 700;
+const MIN_SCALE = 0.55;
+const MAX_SCALE = 1.8;
+const NODE_TYPES: ExploreNodeType[] = ["quorum", "post", "claim", "agent"];
 
 export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
+  const [query, setQuery] = useState("");
+  const [minConfidence, setMinConfidence] = useState(25);
+  const [enabledTypes, setEnabledTypes] = useState<Record<ExploreNodeType, boolean>>({
+    quorum: true,
+    post: true,
+    claim: true,
+    agent: true
+  });
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<Viewport>({
+    x: WIDTH / 2,
+    y: HEIGHT / 2,
+    scale: 1
+  });
+  const [dragState, setDragState] = useState<DragState>(null);
 
-  const positioned = useMemo<PositionedNode[]>(() => {
-    const total = Math.max(data.nodes.length, 1);
-    return data.nodes.map((node, index) => {
-      const angle = (index / total) * Math.PI * 2;
-      const radiusByType: Record<ExploreNodeType, number> = {
-        quorum: 70,
-        post: 130,
-        claim: 190,
-        agent: 250
-      };
-      const radius = radiusByType[node.type];
-      const centerX = WIDTH / 2;
-      const centerY = HEIGHT / 2;
-      return {
-        id: node.id,
-        label: node.label,
-        type: node.type,
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius
-      };
+  const prepared = useMemo(() => {
+    const initial = data.nodes.filter((node) => {
+      if (!enabledTypes[node.type]) {
+        return false;
+      }
+      if (node.type === "post" || node.type === "claim") {
+        return (node.confidence ?? 0) >= minConfidence;
+      }
+      return true;
     });
-  }, [data.nodes]);
 
-  const positionedMap = useMemo(
-    () =>
-      new Map(
-        positioned.map((node) => [node.id, node] as const)
-      ),
-    [positioned]
+    const visibleIds = new Set(initial.map((node) => node.id));
+    const links = data.links.filter((link) => visibleIds.has(link.source) && visibleIds.has(link.target));
+    const connectedIds = new Set<string>();
+    links.forEach((link) => {
+      connectedIds.add(link.source);
+      connectedIds.add(link.target);
+    });
+
+    const nodes = initial.filter((node) => connectedIds.has(node.id));
+    const nodeMap = new Map(nodes.map((node) => [node.id, node] as const));
+
+    const adjacency = new Map<string, string[]>();
+    nodes.forEach((node) => adjacency.set(node.id, []));
+    links.forEach((link) => {
+      adjacency.get(link.source)?.push(link.target);
+      adjacency.get(link.target)?.push(link.source);
+    });
+
+    return { nodes, links, nodeMap, adjacency };
+  }, [data.nodes, data.links, enabledTypes, minConfidence]);
+
+  const matchedIds = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    if (!text) {
+      return new Set<string>();
+    }
+    return new Set(
+      prepared.nodes
+        .filter((node) => node.label.toLowerCase().includes(text))
+        .map((node) => node.id)
+    );
+  }, [prepared.nodes, query]);
+
+  const layoutNodes = useMemo(
+    () => computeForceLayout(prepared.nodes, prepared.links),
+    [prepared.nodes, prepared.links]
   );
 
+  const layoutMap = useMemo(
+    () => new Map(layoutNodes.map((node) => [node.id, node] as const)),
+    [layoutNodes]
+  );
+
+  const activeNodeId = hoveredNodeId ?? selectedNodeId;
+  const selectedNode = selectedNodeId ? prepared.nodeMap.get(selectedNodeId) ?? null : null;
+  const neighborIds = selectedNodeId ? prepared.adjacency.get(selectedNodeId) ?? [] : [];
+  const neighbors = neighborIds
+    .map((id) => prepared.nodeMap.get(id))
+    .filter((node): node is ExploreNode => Boolean(node));
+
+  const counts = useMemo(() => {
+    const countMap: Record<ExploreNodeType, number> = {
+      quorum: 0,
+      post: 0,
+      claim: 0,
+      agent: 0
+    };
+    prepared.nodes.forEach((node) => {
+      countMap[node.type] += 1;
+    });
+    return countMap;
+  }, [prepared.nodes]);
+
+  function toggleType(type: ExploreNodeType) {
+    setEnabledTypes((prev) => ({ ...prev, [type]: !prev[type] }));
+    setSelectedNodeId(null);
+  }
+
+  function resetView() {
+    setViewport({ x: WIDTH / 2, y: HEIGHT / 2, scale: 1 });
+  }
+
+  function zoom(delta: number) {
+    setViewport((prev) => ({
+      ...prev,
+      scale: clamp(prev.scale + delta, MIN_SCALE, MAX_SCALE)
+    }));
+  }
+
+  function onWheel(event: React.WheelEvent<SVGSVGElement>) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.08 : -0.08;
+    zoom(delta);
+  }
+
+  function onMouseDown(event: React.MouseEvent<SVGSVGElement>) {
+    setDragState({ x: event.clientX, y: event.clientY });
+  }
+
+  function onMouseMove(event: React.MouseEvent<SVGSVGElement>) {
+    if (!dragState) {
+      return;
+    }
+    const dx = event.clientX - dragState.x;
+    const dy = event.clientY - dragState.y;
+    setViewport((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+    setDragState({ x: event.clientX, y: event.clientY });
+  }
+
+  function onMouseUp() {
+    setDragState(null);
+  }
+
   return (
-    <div className={cn("overflow-hidden rounded-xl border border-border bg-card p-3", className)}>
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-[320px] w-full">
-        {data.links.map((link, index) => {
-          const source = positionedMap.get(link.source);
-          const target = positionedMap.get(link.target);
-          if (!source || !target) {
-            return null;
-          }
-          const isHighlighted = hoveredNodeId && (source.id === hoveredNodeId || target.id === hoveredNodeId);
-          return (
-            <line
-              key={`${link.source}-${link.target}-${index}`}
-              x1={source.x}
-              y1={source.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={isHighlighted ? "#0d9488" : "#d4d4d8"}
-              strokeOpacity={isHighlighted ? 0.95 : 0.7}
-              strokeWidth={isHighlighted ? 2 : 1}
-            />
-          );
-        })}
-        {positioned.map((node) => (
-          <g
-            key={node.id}
-            transform={`translate(${node.x}, ${node.y})`}
-            onMouseEnter={() => setHoveredNodeId(node.id)}
-            onMouseLeave={() => setHoveredNodeId(null)}
+    <div className={cn("rounded-xl border border-border bg-card p-4", className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search node labels..."
+            className="pl-8"
+          />
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-2">
+          <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Min confidence</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={minConfidence}
+            onChange={(event) => setMinConfidence(Number(event.target.value))}
+            className="h-2 w-28 accent-emerald-600"
+          />
+          <span className="w-9 text-right font-mono text-xs">{minConfidence}%</span>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => zoom(0.12)}>
+          <ZoomIn className="mr-1 h-4 w-4" />
+          Zoom
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => zoom(-0.12)}>
+          <ZoomOut className="mr-1 h-4 w-4" />
+          Out
+        </Button>
+        <Button variant="outline" size="sm" onClick={resetView}>
+          Reset view
+        </Button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {NODE_TYPES.map((type) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => toggleType(type)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition",
+              enabledTypes[type]
+                ? "border-primary/35 bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground"
+            )}
           >
-            <circle r={radiusForType(node.type)} fill={fillForType(node.type)} stroke="#ffffff" strokeWidth={2} />
-            {hoveredNodeId === node.id ? (
-              <text
-                x={0}
-                y={-14}
-                textAnchor="middle"
-                className="font-mono text-[10px]"
-                fill="#18181b"
-              >
-                {truncate(node.label)}
-              </text>
-            ) : null}
-          </g>
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: fillForType(type) }} />
+            {type}
+          </button>
         ))}
-      </svg>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <LegendDot label="Quorum" color={fillForType("quorum")} />
-        <LegendDot label="Post" color={fillForType("post")} />
-        <LegendDot label="Claim" color={fillForType("claim")} />
-        <LegendDot label="Agent/User" color={fillForType("agent")} />
+        <Badge variant="outline" className="font-mono text-[11px]">
+          {prepared.nodes.length} nodes
+        </Badge>
+        <Badge variant="outline" className="font-mono text-[11px]">
+          {prepared.links.length} links
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_300px]">
+        <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
+          <svg
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            className="h-[520px] w-full cursor-grab active:cursor-grabbing"
+            onWheel={onWheel}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+          >
+            <defs>
+              <pattern id="mq-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+                <circle cx="1" cy="1" r="0.7" fill="#e4e4e7" />
+              </pattern>
+            </defs>
+            <rect x="0" y="0" width={WIDTH} height={HEIGHT} fill="url(#mq-grid)" />
+            <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
+              {prepared.links.map((link, index) => {
+                const source = layoutMap.get(link.source);
+                const target = layoutMap.get(link.target);
+                if (!source || !target) {
+                  return null;
+                }
+                const isActive =
+                  activeNodeId &&
+                  (link.source === activeNodeId || link.target === activeNodeId);
+                const queryActive = query.trim() && (matchedIds.has(link.source) || matchedIds.has(link.target));
+                return (
+                  <line
+                    key={`${link.source}-${link.target}-${index}`}
+                    x1={source.x}
+                    y1={source.y}
+                    x2={target.x}
+                    y2={target.y}
+                    stroke={isActive || queryActive ? "#0d9488" : "#d4d4d8"}
+                    strokeOpacity={isActive || queryActive ? 0.95 : 0.5}
+                    strokeWidth={isActive || queryActive ? 1.9 : 1}
+                  />
+                );
+              })}
+
+              {layoutNodes.map((node) => {
+                const isMatched = query.trim() ? matchedIds.has(node.id) : false;
+                const isActive = activeNodeId === node.id;
+                const isDimmed = query.trim() ? !isMatched : false;
+                return (
+                  <g
+                    key={node.id}
+                    transform={`translate(${node.x}, ${node.y})`}
+                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                    onMouseLeave={() => setHoveredNodeId(null)}
+                    onClick={() => setSelectedNodeId(node.id)}
+                  >
+                    <circle
+                      r={radiusForType(node.type)}
+                      fill={fillForType(node.type)}
+                      stroke={isActive ? "#0d9488" : "#ffffff"}
+                      strokeWidth={isActive ? 2.5 : 1.5}
+                      opacity={isDimmed ? 0.25 : 1}
+                    />
+                    {(isActive || isMatched) && (
+                      <text
+                        x={0}
+                        y={-(radiusForType(node.type) + 7)}
+                        textAnchor="middle"
+                        className="font-mono text-[10px]"
+                        fill="#18181b"
+                      >
+                        {truncate(node.label, 34)}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+        </div>
+
+        <aside className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+          <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Graph Insights
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <Metric label="Quorums" value={counts.quorum} />
+            <Metric label="Posts" value={counts.post} />
+            <Metric label="Claims" value={counts.claim} />
+            <Metric label="Agents" value={counts.agent} />
+          </div>
+
+          <div className="space-y-2 rounded-md border border-border bg-card p-3">
+            <p className="text-xs font-medium text-muted-foreground">Selected node</p>
+            {selectedNode ? (
+              <>
+                <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: fillForType(selectedNode.type) }} />
+                  {selectedNode.type}
+                </div>
+                <p className="text-sm font-medium">{selectedNode.label}</p>
+                {selectedNode.confidence !== undefined ? (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    Confidence: {selectedNode.confidence}%
+                  </p>
+                ) : null}
+                {routeForNode(selectedNode) ? (
+                  <Link href={routeForNode(selectedNode)!} className="text-xs font-medium text-primary hover:underline">
+                    Open in thread
+                  </Link>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Click a node to inspect connected items and navigate.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2 rounded-md border border-border bg-card p-3">
+            <p className="text-xs font-medium text-muted-foreground">Connected nodes</p>
+            {neighbors.length ? (
+              <ul className="space-y-1 text-xs">
+                {neighbors.slice(0, 8).map((neighbor) => (
+                  <li key={neighbor.id} className="rounded border border-border bg-muted/40 px-2 py-1">
+                    <span className="font-medium">{neighbor.label}</span>
+                    <span className="ml-1 text-muted-foreground">({neighbor.type})</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">No neighbor data for current selection.</p>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );
 }
 
+function computeForceLayout(nodes: ExploreNode[], links: ExploreGraphData["links"]): PositionedNode[] {
+  if (!nodes.length) {
+    return [];
+  }
+
+  const centers: Record<ExploreNodeType, { x: number; y: number }> = {
+    quorum: { x: -230, y: -150 },
+    post: { x: 180, y: -90 },
+    claim: { x: 210, y: 170 },
+    agent: { x: -220, y: 170 }
+  };
+
+  const positioned = nodes.map((node) => {
+    const center = centers[node.type];
+    const rng = seededRandom(node.id);
+    return {
+      ...node,
+      x: center.x + (rng() - 0.5) * 220,
+      y: center.y + (rng() - 0.5) * 180
+    };
+  });
+
+  const velocity = new Map<string, { x: number; y: number }>(
+    positioned.map((node) => [node.id, { x: 0, y: 0 }])
+  );
+  const nodeMap = new Map(positioned.map((node) => [node.id, node] as const));
+
+  for (let iteration = 0; iteration < 200; iteration += 1) {
+    const forces = new Map<string, { x: number; y: number }>(
+      positioned.map((node) => [node.id, { x: 0, y: 0 }])
+    );
+
+    for (let i = 0; i < positioned.length; i += 1) {
+      for (let j = i + 1; j < positioned.length; j += 1) {
+        const a = positioned[i];
+        const b = positioned[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy + 0.001;
+        const dist = Math.sqrt(distSq);
+        const strength = 2800 / distSq;
+        const fx = (dx / dist) * strength;
+        const fy = (dy / dist) * strength;
+
+        const fa = forces.get(a.id)!;
+        const fb = forces.get(b.id)!;
+        fa.x -= fx;
+        fa.y -= fy;
+        fb.x += fx;
+        fb.y += fy;
+      }
+    }
+
+    for (const link of links) {
+      const source = nodeMap.get(link.source);
+      const target = nodeMap.get(link.target);
+      if (!source || !target) {
+        continue;
+      }
+
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      const targetDistance = preferredLinkDistance(source.type, target.type);
+      const stretch = dist - targetDistance;
+      const strength = stretch * 0.012;
+      const fx = (dx / dist) * strength;
+      const fy = (dy / dist) * strength;
+
+      const fs = forces.get(source.id)!;
+      const ft = forces.get(target.id)!;
+      fs.x += fx;
+      fs.y += fy;
+      ft.x -= fx;
+      ft.y -= fy;
+    }
+
+    positioned.forEach((node) => {
+      const force = forces.get(node.id)!;
+      const center = centers[node.type];
+      force.x += (center.x - node.x) * 0.025;
+      force.y += (center.y - node.y) * 0.025;
+
+      const vel = velocity.get(node.id)!;
+      vel.x = (vel.x + force.x) * 0.84;
+      vel.y = (vel.y + force.y) * 0.84;
+      node.x = clamp(node.x + vel.x, -500, 500);
+      node.y = clamp(node.y + vel.y, -300, 300);
+    });
+  }
+
+  return positioned;
+}
+
+function preferredLinkDistance(source: ExploreNodeType, target: ExploreNodeType): number {
+  if ((source === "quorum" && target === "post") || (source === "post" && target === "quorum")) {
+    return 170;
+  }
+  if ((source === "post" && target === "claim") || (source === "claim" && target === "post")) {
+    return 135;
+  }
+  return 155;
+}
+
 function radiusForType(type: ExploreNodeType): number {
   if (type === "quorum") {
-    return 10;
+    return 12;
   }
   if (type === "post") {
-    return 8;
+    return 9;
   }
   if (type === "claim") {
-    return 6;
+    return 7;
   }
-  return 7;
+  return 8;
 }
 
 function fillForType(type: ExploreNodeType): string {
@@ -135,15 +499,47 @@ function fillForType(type: ExploreNodeType): string {
   return "#f59e0b";
 }
 
-function truncate(value: string, max = 26): string {
+function routeForNode(node: ExploreNode): string | null {
+  if (node.id.startsWith("p:")) {
+    const postId = node.id.slice(2);
+    return node.quorum ? `/q/${node.quorum}/post/${postId}` : null;
+  }
+  if (node.id.startsWith("q:")) {
+    return `/q/${node.id.slice(2)}`;
+  }
+  if (node.id.startsWith("a:user:")) {
+    return `/u/${node.id.slice(7)}`;
+  }
+  if (node.id.startsWith("a:")) {
+    return `/agent/${node.id.slice(2)}`;
+  }
+  return null;
+}
+
+function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}...` : value;
 }
 
-function LegendDot({ label, color }: { label: string; color: string }) {
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function seededRandom(seed: string): () => number {
+  let state = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    state = (state * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1">
-      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-      {label}
-    </span>
+    <div className="rounded border border-border bg-card px-2 py-1.5">
+      <p className="font-mono text-[10px] uppercase text-muted-foreground">{label}</p>
+      <p className="font-heading text-base font-semibold">{value}</p>
+    </div>
   );
 }

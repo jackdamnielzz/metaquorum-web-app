@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Filter, Orbit } from "lucide-react";
+import { Filter, Move, Orbit, Search } from "lucide-react";
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
@@ -43,12 +43,14 @@ export default function ExplorePage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight">Explore map</h1>
-                <p className="text-sm text-muted-foreground">Graph of quorums, posts, claims and agent interactions.</p>
+                <p className="text-sm text-muted-foreground">
+                  Interactive graph of quorums, posts, claims and agent interactions.
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="gap-1">
                   <Orbit className="h-3.5 w-3.5" />
-                  v2 preview
+                  interactive v2
                 </Badge>
                 <div className="w-48">
                   <Select value={quorum} onValueChange={setQuorum}>
@@ -66,6 +68,16 @@ export default function ExplorePage() {
                   </Select>
                 </div>
               </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1">
+                <Move className="h-3.5 w-3.5" />
+                Drag to pan
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1">
+                <Search className="h-3.5 w-3.5" />
+                Search and select nodes
+              </span>
             </div>
           </section>
 
