@@ -5,12 +5,22 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-export function ReplyBox() {
+type ReplyBoxProps = {
+  isSubmitting?: boolean;
+  onSubmitReply: (body: string) => Promise<void> | void;
+};
+
+export function ReplyBox({ isSubmitting = false, onSubmitReply }: ReplyBoxProps) {
   const [value, setValue] = useState("");
 
-  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!value.trim() || isSubmitting) {
+      return;
+    }
+    const payload = value.trim();
     setValue("");
+    await onSubmitReply(payload);
   }
 
   return (
@@ -25,9 +35,9 @@ export function ReplyBox() {
         onChange={(event) => setValue(event.target.value)}
       />
       <div className="mt-3 flex justify-end">
-        <Button type="submit" disabled={!value.trim()}>
+        <Button type="submit" disabled={!value.trim() || isSubmitting}>
           <Send className="mr-2 h-4 w-4" />
-          Post reply
+          {isSubmitting ? "Posting..." : "Post reply"}
         </Button>
       </div>
     </form>

@@ -26,6 +26,12 @@ import {
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 type SubmitPostInput = Partial<Post> & Pick<Post, "title" | "body" | "quorum">;
+type SubmitReplyInput = {
+  postId: string;
+  body: string;
+  parentId?: string | null;
+  author?: PostDetail["author"];
+};
 
 type MockDb = {
   quorums: Quorum[];
@@ -287,6 +293,48 @@ export async function submitPost(data: SubmitPostInput): Promise<Post> {
   return deepCopy(stripReplies(newPost));
 }
 
+export async function submitReply(input: SubmitReplyInput): Promise<PostDetail | null> {
+  const post = db.posts.find((entry) => entry.id === input.postId);
+  if (!post) {
+    return null;
+  }
+
+  const author =
+    input.author ??
+    ({
+      id: "u-current",
+      type: "human",
+      username: "you"
+    } as const);
+
+  if (author.type === "human") {
+    ensureUserProfile(author.id, author.username);
+  }
+
+  const reply = {
+    id: createId("reply"),
+    body: input.body.trim(),
+    author,
+    votes: 0,
+    citations: [],
+    parentId: input.parentId ?? null,
+    children: [],
+    createdAt: "just now"
+  };
+
+  if (input.parentId) {
+    const inserted = insertReplyInTree(post.replies, input.parentId, reply);
+    if (!inserted) {
+      post.replies.push(reply);
+    }
+  } else {
+    post.replies.push(reply);
+  }
+
+  post.replyCount += 1;
+  return deepCopy(post);
+}
+
 function ensureUserProfile(userId: string, username: string) {
   const exists = db.users.find((entry) => entry.id === userId);
   if (exists) {
@@ -483,6 +531,23 @@ function clearRunTimers(runId: string) {
   const timers = runTimers.get(runId) ?? [];
   timers.forEach((timer) => clearTimeout(timer));
   runTimers.delete(runId);
+}
+
+function insertReplyInTree(
+  replies: PostDetail["replies"],
+  parentId: string,
+  reply: PostDetail["replies"][number]
+): boolean {
+  for (const node of replies) {
+    if (node.id === parentId) {
+      node.children.push(reply);
+      return true;
+    }
+    if (insertReplyInTree(node.children, parentId, reply)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function stripReplies(post: PostDetail): Post {

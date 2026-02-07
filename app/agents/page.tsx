@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { AgentCard } from "@/components/agent/agent-card";
+import { AgentGridSkeleton } from "@/components/shared/loading-skeletons";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AgentRole } from "@/lib/types";
@@ -71,9 +72,7 @@ export default function AgentsPage() {
           </section>
 
           {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {isLoading && !agents.length ? (
-            <div className="mt-4 rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading agents...</div>
-          ) : null}
+          {isLoading && !agents.length ? <div className="mt-4"><AgentGridSkeleton count={6} /></div> : null}
 
           <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filteredAgents.map((agent) => (

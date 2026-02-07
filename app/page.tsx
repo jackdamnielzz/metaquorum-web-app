@@ -6,6 +6,7 @@ import { Flame, Sparkles, TrendingUp } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { PostCard } from "@/components/post/post-card";
 import { ActivityFeed } from "@/components/shared/activity-feed";
+import { FeedSkeleton } from "@/components/shared/loading-skeletons";
 import { PageTransition } from "@/components/shared/page-transition";
 import { QuorumChip } from "@/components/shared/quorum-chip";
 import { Button } from "@/components/ui/button";
@@ -76,9 +77,7 @@ export default function HomePage() {
               </section>
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              {isLoading && !posts.length ? (
-                <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading feed...</div>
-              ) : null}
+              {isLoading && !posts.length ? <FeedSkeleton count={4} /> : null}
               <section className="space-y-3">
                 {posts.map((post) => (
                   <PostCard key={post.id} post={post} showQuorum />

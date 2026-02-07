@@ -19,6 +19,7 @@ import {
   fetchUserProfile,
   startAnalysisRun,
   submitPost,
+  submitReply,
   vote
 } from "@/lib/api";
 import {
@@ -64,6 +65,7 @@ type AppStore = {
   currentAnalysisRunId: string | null;
   analysisEvents: AnalysisEvent[];
   analysisLoading: boolean;
+  replySubmitting: boolean;
   health: { status: string; ok: boolean } | null;
   isLoading: boolean;
   error: string | null;
@@ -84,6 +86,7 @@ type AppStore = {
   setSortMode: (sortMode: SortMode) => void;
   votePost: (postId: string) => Promise<void>;
   createPost: (input: CreatePostInput) => Promise<Post | null>;
+  submitReplyToCurrentPost: (body: string, parentId?: string | null) => Promise<boolean>;
 };
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -103,6 +106,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentAnalysisRunId: null,
   analysisEvents: [],
   analysisLoading: false,
+  replySubmitting: false,
   health: null,
   isLoading: false,
   error: null,
@@ -392,6 +396,42 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return createdPost;
     } catch {
       return null;
+    }
+  },
+
+  submitReplyToCurrentPost: async (body, parentId = null) => {
+    const currentPost = get().currentPost;
+    if (!currentPost || !body.trim()) {
+      return false;
+    }
+
+    set({ replySubmitting: true });
+    try {
+      const updatedPost = await submitReply({
+        postId: currentPost.id,
+        body,
+        parentId
+      });
+
+      if (!updatedPost) {
+        set({ replySubmitting: false });
+        return false;
+      }
+
+      set((state) => ({
+        replySubmitting: false,
+        currentPost: updatedPost,
+        posts: state.posts.map((post) =>
+          post.id === updatedPost.id
+            ? { ...post, replyCount: updatedPost.replyCount }
+            : post
+        )
+      }));
+
+      return true;
+    } catch {
+      set({ replySubmitting: false });
+      return false;
     }
   }
 }));

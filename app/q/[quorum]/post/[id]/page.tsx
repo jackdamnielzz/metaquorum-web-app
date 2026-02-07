@@ -31,6 +31,7 @@ export default function PostPage() {
   const currentAnalysisRunId = useAppStore((state) => state.currentAnalysisRunId);
   const analysisEvents = useAppStore((state) => state.analysisEvents);
   const analysisLoading = useAppStore((state) => state.analysisLoading);
+  const replySubmitting = useAppStore((state) => state.replySubmitting);
   const health = useAppStore((state) => state.health);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
@@ -43,6 +44,7 @@ export default function PostPage() {
   const selectAnalysisRun = useAppStore((state) => state.selectAnalysisRun);
   const refreshCurrentAnalysis = useAppStore((state) => state.refreshCurrentAnalysis);
   const cancelCurrentAnalysis = useAppStore((state) => state.cancelCurrentAnalysis);
+  const submitReplyToCurrentPost = useAppStore((state) => state.submitReplyToCurrentPost);
   const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
@@ -153,7 +155,12 @@ export default function PostPage() {
               </section>
 
               <section className="mt-4">
-                <ReplyBox />
+                <ReplyBox
+                  isSubmitting={replySubmitting}
+                  onSubmitReply={async (body) => {
+                    await submitReplyToCurrentPost(body);
+                  }}
+                />
               </section>
             </>
           ) : null}

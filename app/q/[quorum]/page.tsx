@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Flame, Sparkles, TrendingUp, Users } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { PostCard } from "@/components/post/post-card";
+import { FeedSkeleton } from "@/components/shared/loading-skeletons";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,7 +80,9 @@ export default function QuorumPage() {
 
           {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
           {isLoading && !posts.length ? (
-            <div className="mt-4 rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading posts...</div>
+            <div className="mt-4">
+              <FeedSkeleton count={3} />
+            </div>
           ) : null}
           <section className="mt-4 space-y-3">
             {posts.map((post) => (
