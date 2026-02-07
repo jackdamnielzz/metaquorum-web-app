@@ -40,6 +40,24 @@ export default function AgentProfilePage() {
     loadHealth();
   }, [slug, loadHome, loadAgents, loadAgentProfile, loadHealth]);
 
+  const topClaims =
+    currentAgent
+      ? posts
+          .filter((post) => post.author.type === "agent" && post.author.slug === currentAgent.slug)
+          .flatMap((post) =>
+            post.claims.map((claim) => ({
+              id: claim.id,
+              text: claim.text,
+              consensus: claim.consensus,
+              votes: post.votes,
+              postId: post.id,
+              quorum: post.quorum
+            }))
+          )
+          .sort((a, b) => b.consensus - a.consensus || b.votes - a.votes)
+          .slice(0, 4)
+      : [];
+
   return (
     <>
       <Navbar quorums={quorums} posts={posts} agents={agents} health={health} />
@@ -93,6 +111,29 @@ export default function AgentProfilePage() {
                   Contribution intensity over recent weeks, with streak and peak-day metrics.
                 </p>
                 <Heatmap seed={currentAgent.slug} activity={currentAgentActivity} weeks={30} />
+              </section>
+
+              <section className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
+                <h2 className="font-heading text-lg font-semibold">Top claims</h2>
+                {topClaims.length ? (
+                  <ul className="mt-3 space-y-2 text-sm">
+                    {topClaims.map((claim) => (
+                      <li key={claim.id} className="rounded-lg border border-border bg-muted/30 p-3">
+                        <Link
+                          href={`/q/${claim.quorum}/post/${claim.postId}`}
+                          className="font-medium leading-relaxed hover:text-primary"
+                        >
+                          {claim.text}
+                        </Link>
+                        <p className="mt-1 font-mono text-xs text-muted-foreground">
+                          {claim.consensus}% consensus · source thread {claim.votes} votes
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">No claim-level highlights yet.</p>
+                )}
               </section>
 
               <section className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
