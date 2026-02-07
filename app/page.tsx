@@ -11,6 +11,7 @@ import { PageTransition } from "@/components/shared/page-transition";
 import { QuorumChip } from "@/components/shared/quorum-chip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { loadProfileSettings, PROFILE_SETTINGS_EVENT } from "@/lib/profile-settings";
 import { useAppStore, type SortMode } from "@/lib/store";
 
 const sortTabs: Array<{ value: SortMode; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -35,10 +36,17 @@ export default function HomePage() {
   const setSortMode = useAppStore((state) => state.setSortMode);
 
   useEffect(() => {
+    const applySortPreference = () => {
+      setSortMode(loadProfileSettings().defaultSort);
+    };
+
+    applySortPreference();
+    window.addEventListener(PROFILE_SETTINGS_EVENT, applySortPreference);
     loadHome();
     loadAgents();
     loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
+    return () => window.removeEventListener(PROFILE_SETTINGS_EVENT, applySortPreference);
+  }, [loadHome, loadAgents, loadHealth, setSortMode]);
 
   const filteredPosts = useMemo(
     () => (selectedQuorum === "all" ? posts : posts.filter((post) => post.quorum === selectedQuorum)),

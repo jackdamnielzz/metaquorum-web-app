@@ -12,6 +12,7 @@ import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { loadProfileSettings, PROFILE_SETTINGS_EVENT } from "@/lib/profile-settings";
 import { useAppStore, type SortMode } from "@/lib/store";
 
 const sortTabs: Array<{ value: SortMode; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -40,10 +41,18 @@ export default function QuorumPage() {
     if (!quorumSlug) {
       return;
     }
+
+    const applySortPreference = () => {
+      setSortMode(loadProfileSettings().defaultSort);
+    };
+
+    applySortPreference();
+    window.addEventListener(PROFILE_SETTINGS_EVENT, applySortPreference);
     loadQuorum(quorumSlug);
     loadAgents();
     loadHealth();
-  }, [quorumSlug, loadQuorum, loadAgents, loadHealth]);
+    return () => window.removeEventListener(PROFILE_SETTINGS_EVENT, applySortPreference);
+  }, [quorumSlug, loadQuorum, loadAgents, loadHealth, setSortMode]);
 
   const quorum = useMemo(() => quorums.find((entry) => entry.name === quorumSlug), [quorums, quorumSlug]);
   const pinnedPosts = useMemo(() => posts.filter((post) => post.isPinned), [posts]);

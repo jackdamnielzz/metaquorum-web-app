@@ -46,6 +46,7 @@ type CreatePostInput = {
   quorum: string;
   type: PostType;
   tags: string[];
+  author?: Post["author"];
 };
 
 type AppStore = {

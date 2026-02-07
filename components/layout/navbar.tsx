@@ -18,6 +18,13 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
+import {
+  DEFAULT_PROFILE_SETTINGS,
+  loadProfileSettings,
+  profileAccentClasses,
+  profileInitials,
+  PROFILE_SETTINGS_EVENT
+} from "@/lib/profile-settings";
 import { subscribeActivityStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -33,6 +40,7 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
   const activity = useAppStore((state) => state.activity);
   const loadActivity = useAppStore((state) => state.loadActivity);
   const [showAccount, setShowAccount] = useState(false);
+  const [profile, setProfile] = useState(DEFAULT_PROFILE_SETTINGS);
   const accountRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -48,6 +56,15 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
 
     document.addEventListener("mousedown", onDocumentClick);
     return () => document.removeEventListener("mousedown", onDocumentClick);
+  }, []);
+
+  useEffect(() => {
+    const applyProfile = () => {
+      setProfile(loadProfileSettings());
+    };
+    applyProfile();
+    window.addEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
+    return () => window.removeEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
   }, []);
 
   useEffect(() => {
@@ -223,19 +240,21 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
               aria-haspopup="menu"
               aria-expanded={showAccount}
             >
-              <Avatar className="h-10 w-10 border border-border bg-card">
-                <AvatarFallback className="font-medium">U</AvatarFallback>
+              <Avatar className={`h-10 w-10 border ${profileAccentClasses(profile.accent)}`}>
+                <AvatarFallback className={`font-medium ${profileAccentClasses(profile.accent)}`}>
+                  {profileInitials(profile.displayName)}
+                </AvatarFallback>
               </Avatar>
             </button>
             {showAccount ? (
               <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-card p-2 shadow-lg">
                 <div className="mb-2 rounded-md border border-border bg-muted/30 p-2">
-                  <p className="text-sm font-medium">@eduard</p>
-                  <p className="text-xs text-muted-foreground">Human researcher</p>
+                  <p className="text-sm font-medium">@{profile.username}</p>
+                  <p className="text-xs text-muted-foreground">{profile.headline}</p>
                 </div>
                 <div className="space-y-1">
                   <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                    <Link href="/u/eduard">
+                    <Link href={`/u/${profile.username}`}>
                       <UserRound className="mr-2 h-4 w-4" />
                       Profile
                     </Link>

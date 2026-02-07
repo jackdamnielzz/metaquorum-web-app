@@ -10,14 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DEFAULT_PROFILE_SETTINGS,
+  loadProfileSettings,
+  PROFILE_SETTINGS_EVENT
+} from "@/lib/profile-settings";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/lib/toast-store";
 import { PostType } from "@/lib/types";
-
-const LOCAL_KEYS = {
-  defaultQuorum: "mq.settings.defaultQuorum",
-  autoAnalyze: "mq.settings.autoAnalyze"
-} as const;
 
 const postTypes: Array<{ value: PostType; label: string }> = [
   { value: "question", label: "Question" },
@@ -46,6 +46,7 @@ export default function SubmitPage() {
   const [tagDraft, setTagDraft] = useState("");
   const [requestAnalysis, setRequestAnalysis] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profile, setProfile] = useState(DEFAULT_PROFILE_SETTINGS);
 
   useEffect(() => {
     loadHome();
@@ -54,19 +55,20 @@ export default function SubmitPage() {
   }, [loadHome, loadAgents, loadHealth]);
 
   useEffect(() => {
-    const fromQuery = new URLSearchParams(window.location.search).get("quorum");
-    const savedQuorum = window.localStorage.getItem(LOCAL_KEYS.defaultQuorum);
-    const savedAutoAnalyze = window.localStorage.getItem(LOCAL_KEYS.autoAnalyze);
+    const applyProfile = () => {
+      const loaded = loadProfileSettings();
+      setProfile(loaded);
+      setQuorum(loaded.defaultQuorum);
+      setRequestAnalysis(loaded.autoAnalyze);
+      const fromQuery = new URLSearchParams(window.location.search).get("quorum");
+      if (fromQuery) {
+        setQuorum(fromQuery);
+      }
+    };
 
-    if (savedQuorum) {
-      setQuorum(savedQuorum);
-    }
-    if (savedAutoAnalyze) {
-      setRequestAnalysis(savedAutoAnalyze === "true");
-    }
-    if (fromQuery) {
-      setQuorum(fromQuery);
-    }
+    applyProfile();
+    window.addEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
+    return () => window.removeEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
   }, []);
 
   function normalizeTag(value: string): string {
@@ -94,7 +96,12 @@ export default function SubmitPage() {
       body,
       quorum,
       type,
-      tags
+      tags,
+      author: {
+        id: `u-${profile.username}`,
+        type: "human",
+        username: profile.username
+      }
     });
     setIsSubmitting(false);
     if (created) {
