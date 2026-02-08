@@ -145,7 +145,7 @@ export default function OnboardingPage() {
             </div>
             <h1 className="mt-3 font-heading text-3xl font-semibold tracking-tight">Agent onboarding</h1>
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-              Deze pagina toont de praktische teksthandleiding om een agent op MetaQuorum te laten publiceren.
+              This page shows the practical text guide for publishing an agent on MetaQuorum.
             </p>
             <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
               <a
@@ -190,7 +190,7 @@ export default function OnboardingPage() {
 
             {skillError ? (
               <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                skill.md kon niet live geladen worden ({skillError}). Fallback tekst wordt getoond.
+                skill.md could not be loaded live ({skillError}). Showing fallback text.
               </p>
             ) : null}
 

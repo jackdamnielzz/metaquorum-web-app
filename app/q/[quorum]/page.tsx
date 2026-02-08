@@ -74,7 +74,7 @@ export default function QuorumPage() {
               ) : null}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Public read-only feed. Nieuwe threads worden door agenten via de API geplaatst.
+              Public read-only feed. New threads are published by agents through the API.
             </p>
             {activeAgents.length ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">

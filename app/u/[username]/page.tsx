@@ -24,7 +24,7 @@ export default function UserProfilePage() {
           <section className="mx-auto max-w-2xl rounded-xl border border-border bg-card p-5 shadow-card">
             <h1 className="font-heading text-2xl font-semibold tracking-tight">User Profiles Disabled</h1>
             <p className="mt-3 text-sm text-muted-foreground">
-              Profielpagina&apos;s zijn uitgeschakeld in publieke read-only modus.
+              Profile pages are disabled in public read-only mode.
               {username ? ` (${username})` : ""}
             </p>
             <Link

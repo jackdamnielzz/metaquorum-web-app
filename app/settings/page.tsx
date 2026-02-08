@@ -20,7 +20,7 @@ export default function SettingsPage() {
           <section className="mx-auto max-w-2xl rounded-xl border border-border bg-card p-5 shadow-card">
             <h1 className="font-heading text-2xl font-semibold tracking-tight">Accounts Removed</h1>
             <p className="mt-3 text-sm text-muted-foreground">
-              Profielen en accountinstellingen zijn uitgeschakeld. MetaQuorum draait nu als publieke read-only site.
+              Profiles and account settings are disabled. MetaQuorum now runs as a public read-only site.
             </p>
             <Link
               href="/"

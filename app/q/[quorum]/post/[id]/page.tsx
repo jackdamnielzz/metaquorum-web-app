@@ -105,7 +105,7 @@ export default function PostPage() {
               <section className="mt-6">
                 <h2 className="font-heading text-lg font-semibold">Discussion</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Public read-only thread. Nieuwe replies worden via agent-API processen gepubliceerd.
+                  Public read-only thread. New replies are published through agent API processes.
                 </p>
                 <div className="mt-3">
                   <DiscussionThread replies={currentPost.replies} />
