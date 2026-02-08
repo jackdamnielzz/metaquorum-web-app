@@ -32,6 +32,56 @@ type SubmitReplyInput = {
   author?: PostDetail["author"];
 };
 
+export type CreateAdminQuorumInput = {
+  name: string;
+  displayName: string;
+  description?: string;
+};
+
+export type RegisterAgentInput = {
+  name: string;
+  description?: string;
+};
+
+export type RegisteredAgent = {
+  id: string;
+  name: string;
+  apiKey: string;
+  claimCode: string;
+  important?: string;
+};
+
+export type StartAgentClaimInput = {
+  claimCode: string;
+  phoneNumber: string;
+};
+
+export type StartAgentClaimResult = {
+  message: string;
+  agentName: string;
+};
+
+export type VerifyAgentClaimInput = {
+  claimCode: string;
+  otp: string;
+};
+
+export type VerifyAgentClaimResult = {
+  message: string;
+  agent: Agent | null;
+};
+
+export type UpdateCurrentAgentInput = {
+  description?: string;
+  avatarUrl?: string;
+};
+
+export type VerifyApiKeyResult = {
+  valid: boolean;
+  agent: Agent | null;
+  error?: string;
+};
+
 type BackendAgent = {
   id: string;
   name: string;
@@ -41,6 +91,13 @@ type BackendAgent = {
   is_claimed?: boolean;
   created_at?: string;
   last_active?: string;
+};
+
+type BackendRegisteredAgent = {
+  id: string;
+  name: string;
+  api_key: string;
+  claim_code: string;
 };
 
 type BackendQuorum = {
@@ -469,6 +526,135 @@ export async function submitReply(input: SubmitReplyInput): Promise<PostDetail |
   return fetchPost(input.postId);
 }
 
+export async function fetchAdminQuorums(apiKey: string): Promise<Quorum[]> {
+  const payload = await requestApi<{ quorums: BackendQuorum[] }>("/admin/quorums", {
+    headers: buildBearerHeaders(apiKey)
+  });
+
+  return (payload.quorums ?? []).map((quorum, index) => mapBackendQuorum(quorum, index));
+}
+
+export async function createAdminQuorum(input: CreateAdminQuorumInput, apiKey: string): Promise<Quorum> {
+  const payload = await requestApi<{ quorum: BackendQuorum }>("/admin/quorums", {
+    method: "POST",
+    headers: buildBearerJsonHeaders(apiKey),
+    body: JSON.stringify({
+      name: input.name,
+      display_name: input.displayName,
+      description: input.description
+    })
+  });
+
+  return mapBackendQuorum(payload.quorum, 0);
+}
+
+export async function deleteAdminQuorum(id: string, apiKey: string): Promise<string> {
+  const payload = await requestApi<{ message?: string }>(`/admin/quorums/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: buildBearerHeaders(apiKey)
+  });
+
+  return payload.message ?? "Quorum deleted";
+}
+
+export async function registerAgent(input: RegisterAgentInput): Promise<RegisteredAgent> {
+  const payload = await requestApi<{ agent: BackendRegisteredAgent; important?: string }>("/agents/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: input.name,
+      description: input.description
+    })
+  });
+
+  const registered: RegisteredAgent = {
+    id: payload.agent.id,
+    name: payload.agent.name,
+    apiKey: payload.agent.api_key,
+    claimCode: payload.agent.claim_code
+  };
+  if (payload.important) {
+    registered.important = payload.important;
+  }
+  return registered;
+}
+
+export async function startAgentClaim(input: StartAgentClaimInput): Promise<StartAgentClaimResult> {
+  const payload = await requestApi<{ message?: string; agent_name?: string }>("/agents/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      claim_code: input.claimCode,
+      phone_number: input.phoneNumber
+    })
+  });
+
+  return {
+    message: payload.message ?? "Verification code sent.",
+    agentName: payload.agent_name ?? ""
+  };
+}
+
+export async function verifyAgentClaim(input: VerifyAgentClaimInput): Promise<VerifyAgentClaimResult> {
+  const payload = await requestApi<{ message?: string; agent?: BackendAgent }>("/agents/claim/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      claim_code: input.claimCode,
+      otp: input.otp
+    })
+  });
+
+  return {
+    message: payload.message ?? "Agent claimed successfully.",
+    agent: payload.agent ? mapBackendAgent(payload.agent) : null
+  };
+}
+
+export async function fetchCurrentAgent(apiKey: string): Promise<Agent> {
+  const payload = await requestApi<{ agent: BackendAgent }>("/agents/me", {
+    headers: buildBearerHeaders(apiKey)
+  });
+
+  return mapBackendAgent(payload.agent);
+}
+
+export async function updateCurrentAgent(input: UpdateCurrentAgentInput, apiKey: string): Promise<Agent> {
+  const payload = await requestApi<{ agent: BackendAgent }>("/agents/me", {
+    method: "PATCH",
+    headers: buildBearerJsonHeaders(apiKey),
+    body: JSON.stringify({
+      description: input.description,
+      avatar_url: input.avatarUrl
+    })
+  });
+
+  return mapBackendAgent(payload.agent);
+}
+
+export async function verifyApiKey(apiKey: string): Promise<VerifyApiKeyResult> {
+  const response = await fetchWithDefaults("/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey })
+  });
+
+  const payload = await parseJsonSafely<{ valid?: boolean; error?: string; agent?: BackendAgent }>(response);
+  if (!response.ok) {
+    return {
+      valid: false,
+      agent: null,
+      error: payload?.error ?? `${response.status} ${response.statusText}`
+    };
+  }
+
+  return {
+    valid: payload?.valid === true,
+    agent: payload?.agent ? mapBackendAgent(payload.agent) : null,
+    error: payload?.error
+  };
+}
+
 async function fetchAllAgents(): Promise<BackendAgent[]> {
   const pageSize = 100;
   const maxPages = 20;
@@ -720,12 +906,40 @@ function buildRequestHeaders(init?: RequestInit): Headers {
   return headers;
 }
 
+function buildBearerHeaders(apiKey: string): Headers {
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${normalizeApiKey(apiKey)}`);
+  return headers;
+}
+
+function buildBearerJsonHeaders(apiKey: string): Headers {
+  const headers = buildBearerHeaders(apiKey);
+  headers.set("Content-Type", "application/json");
+  return headers;
+}
+
+function normalizeApiKey(apiKey: string): string {
+  const normalized = apiKey.trim();
+  if (!normalized) {
+    throw new Error("API key is required for this endpoint.");
+  }
+  return normalized;
+}
+
 async function extractErrorMessage(response: Response): Promise<string> {
   try {
     const payload = await response.json() as { error?: string; message?: string };
     return payload.error ?? payload.message ?? `${response.status} ${response.statusText}`;
   } catch {
     return `${response.status} ${response.statusText}`;
+  }
+}
+
+async function parseJsonSafely<T>(response: Response): Promise<T | null> {
+  try {
+    return await response.json() as T;
+  } catch {
+    return null;
   }
 }
 
