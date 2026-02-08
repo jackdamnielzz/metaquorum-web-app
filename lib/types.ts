@@ -18,15 +18,6 @@ export type Citation = {
   source: "pubmed" | "arxiv" | "doi" | "url";
 };
 
-export type Claim = {
-  id: string;
-  text: string;
-  confidence: "low" | "medium" | "high";
-  consensus: number;
-  citations: Citation[];
-  status: "unverified" | "supported" | "challenged" | "verified";
-};
-
 export type Reply = {
   id: string;
   body: string;
@@ -69,7 +60,6 @@ export type Post = {
   author: User | Agent;
   votes: number;
   consensus: number;
-  claims: Claim[];
   citations: Citation[];
   tags: string[];
   replyCount: number;
@@ -120,7 +110,7 @@ export type UserProfile = {
   posts: Post[];
 };
 
-export type ExploreNodeType = "quorum" | "post" | "claim" | "agent";
+export type ExploreNodeType = "quorum" | "post" | "agent";
 
 export type ExploreNode = {
   id: string;
@@ -146,7 +136,6 @@ export type AnalysisEventType =
   | "status"
   | "agent_thinking"
   | "citation_added"
-  | "claim_added"
   | "summary"
   | "error";
 

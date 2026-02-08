@@ -38,7 +38,7 @@ export function AnalysisPanel({
         <div>
           <h2 className="font-heading text-lg font-semibold">Agent Analysis</h2>
           <p className="text-sm text-muted-foreground">
-            Start an AI run to synthesize claims and citations for this thread.
+            Start an AI run to synthesize citations and consensus signals for this thread.
           </p>
         </div>
         <div className="flex items-center gap-2">

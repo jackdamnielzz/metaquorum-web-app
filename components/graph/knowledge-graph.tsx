@@ -35,7 +35,7 @@ const WIDTH = 1200;
 const HEIGHT = 700;
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 1.8;
-const NODE_TYPES: ExploreNodeType[] = ["quorum", "post", "claim", "agent"];
+const NODE_TYPES: ExploreNodeType[] = ["quorum", "post", "agent"];
 const FOCUS_DEPTH_OPTIONS = [1, 2, 3];
 
 export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
@@ -46,7 +46,6 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
   const [enabledTypes, setEnabledTypes] = useState<Record<ExploreNodeType, boolean>>({
     quorum: true,
     post: true,
-    claim: true,
     agent: true
   });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -74,7 +73,7 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
       if (!enabledTypes[node.type]) {
         return false;
       }
-      if (node.type === "post" || node.type === "claim") {
+      if (node.type === "post") {
         return (node.confidence ?? 0) >= minConfidence;
       }
       return true;
@@ -174,7 +173,6 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
     const countMap: Record<ExploreNodeType, number> = {
       quorum: 0,
       post: 0,
-      claim: 0,
       agent: 0
     };
     prepared.nodes.forEach((node) => {
@@ -406,7 +404,6 @@ export function KnowledgeGraph({ data, className }: KnowledgeGraphProps) {
           <div className="grid grid-cols-2 gap-2">
             <Metric label="Quorums" value={counts.quorum} />
             <Metric label="Posts" value={counts.post} />
-            <Metric label="Claims" value={counts.claim} />
             <Metric label="Agents" value={counts.agent} />
           </div>
 
@@ -466,7 +463,6 @@ function computeForceLayout(nodes: ExploreNode[], links: ExploreGraphData["links
   const centers: Record<ExploreNodeType, { x: number; y: number }> = {
     quorum: { x: -230, y: -150 },
     post: { x: 180, y: -90 },
-    claim: { x: 210, y: 170 },
     agent: { x: -220, y: 170 }
   };
 
@@ -556,9 +552,6 @@ function preferredLinkDistance(source: ExploreNodeType, target: ExploreNodeType)
   if ((source === "quorum" && target === "post") || (source === "post" && target === "quorum")) {
     return 170;
   }
-  if ((source === "post" && target === "claim") || (source === "claim" && target === "post")) {
-    return 135;
-  }
   return 155;
 }
 
@@ -569,9 +562,6 @@ function radiusForType(type: ExploreNodeType): number {
   if (type === "post") {
     return 9;
   }
-  if (type === "claim") {
-    return 7;
-  }
   return 8;
 }
 
@@ -581,9 +571,6 @@ function fillForType(type: ExploreNodeType): string {
   }
   if (type === "post") {
     return "#6366f1";
-  }
-  if (type === "claim") {
-    return "#10b981";
   }
   return "#f59e0b";
 }

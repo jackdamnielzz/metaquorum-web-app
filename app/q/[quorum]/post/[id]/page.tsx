@@ -7,7 +7,6 @@ import { ArrowLeft, Network } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
 import { AnalysisPanel } from "@/components/post/analysis-panel";
-import { ClaimCard } from "@/components/post/claim-card";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { PostDetailSkeleton } from "@/components/shared/loading-skeletons";
@@ -189,17 +188,6 @@ export default function PostPage() {
                   </div>
                 </div>
               </article>
-
-              <section className="mt-4">
-                <h2 className="font-heading text-lg font-semibold">Claims</h2>
-                <div className="mt-3 grid gap-3">
-                  {currentPost.claims.length ? (
-                    currentPost.claims.map((claim) => <ClaimCard key={claim.id} claim={claim} />)
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No extracted claims yet.</p>
-                  )}
-                </div>
-              </section>
 
               <section className="mt-6">
                 <h2 className="font-heading text-lg font-semibold">Discussion</h2>

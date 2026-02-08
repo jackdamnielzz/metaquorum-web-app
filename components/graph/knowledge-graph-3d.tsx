@@ -33,7 +33,6 @@ export function KnowledgeGraph3D({ data, className }: KnowledgeGraph3DProps) {
     const counts: Record<ExploreNodeType, number> = {
       quorum: 0,
       post: 0,
-      claim: 0,
       agent: 0
     };
     for (const node of nodes) {
@@ -84,7 +83,6 @@ export function KnowledgeGraph3D({ data, className }: KnowledgeGraph3DProps) {
         <div className="grid grid-cols-2 gap-2">
           <Metric label="Quorums" value={countByType.quorum} />
           <Metric label="Posts" value={countByType.post} />
-          <Metric label="Claims" value={countByType.claim} />
           <Metric label="Agents" value={countByType.agent} />
         </div>
         <div className="space-y-2 rounded-md border border-border bg-card p-3">
@@ -128,7 +126,6 @@ function projectNodes(nodes: ExploreNode[]): PositionedNode[] {
   const typeBands: Record<ExploreNodeType, { radius: number; depth: [number, number] }> = {
     quorum: { radius: 180, depth: [-120, 60] },
     post: { radius: 250, depth: [-180, 100] },
-    claim: { radius: 295, depth: [-240, 160] },
     agent: { radius: 220, depth: [-160, 140] }
   };
 
@@ -174,9 +171,6 @@ function sizeForType(type: ExploreNodeType): number {
   if (type === "post") {
     return 12;
   }
-  if (type === "claim") {
-    return 10;
-  }
   return 11;
 }
 
@@ -186,9 +180,6 @@ function fillForType(type: ExploreNodeType): string {
   }
   if (type === "post") {
     return "#6366f1";
-  }
-  if (type === "claim") {
-    return "#10b981";
   }
   return "#f59e0b";
 }

@@ -27,6 +27,8 @@ export type ProfileSettings = {
   accent: AccentColor;
 };
 
+const RESERVED_PROFILE_NAMES = new Set(["eduard", "niels"]);
+
 export const PROFILE_SETTINGS_KEYS = {
   username: "mq.settings.username",
   displayName: "mq.settings.displayName",
@@ -50,8 +52,8 @@ export const PROFILE_SETTINGS_KEYS = {
 } as const;
 
 export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = {
-  username: "eduard",
-  displayName: "Eduard",
+  username: "researcher",
+  displayName: "Researcher",
   avatarDataUrl: "",
   headline: "Human researcher",
   bio: "Building evidence-backed threads for translational research.",
@@ -97,7 +99,9 @@ export function loadProfileSettings(): ProfileSettings {
   const accentRaw = window.localStorage.getItem(PROFILE_SETTINGS_KEYS.accent);
 
   const username = sanitizeUsername(usernameRaw ?? DEFAULT_PROFILE_SETTINGS.username);
-  const displayName = normalizeText(displayNameRaw, DEFAULT_PROFILE_SETTINGS.displayName);
+  const displayName = sanitizeDisplayName(
+    normalizeText(displayNameRaw, DEFAULT_PROFILE_SETTINGS.displayName)
+  );
   const headline = normalizeText(headlineRaw, DEFAULT_PROFILE_SETTINGS.headline);
   const bio = normalizeText(bioRaw, DEFAULT_PROFILE_SETTINGS.bio);
   const focusTags = parseTags(tagsRaw, DEFAULT_PROFILE_SETTINGS.focusTags);
@@ -180,7 +184,9 @@ export function normalizeProfileSettings(input: ProfileSettings): ProfileSetting
   return {
     ...input,
     username: sanitizeUsername(input.username),
-    displayName: normalizeText(input.displayName, DEFAULT_PROFILE_SETTINGS.displayName),
+    displayName: sanitizeDisplayName(
+      normalizeText(input.displayName, DEFAULT_PROFILE_SETTINGS.displayName)
+    ),
     avatarDataUrl: normalizeAvatarDataUrl(input.avatarDataUrl),
     headline: normalizeText(input.headline, DEFAULT_PROFILE_SETTINGS.headline),
     bio: normalizeText(input.bio, DEFAULT_PROFILE_SETTINGS.bio),
@@ -216,7 +222,10 @@ export function sanitizeUsername(value: string): string {
     .replace(/[^a-z0-9._-]/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^[._-]+|[._-]+$/g, "");
-  return normalized || DEFAULT_PROFILE_SETTINGS.username;
+  if (!normalized || RESERVED_PROFILE_NAMES.has(normalized)) {
+    return DEFAULT_PROFILE_SETTINGS.username;
+  }
+  return normalized;
 }
 
 export function profileInitials(displayName: string): string {
@@ -281,6 +290,14 @@ function dedupeTags(tags: string[]): string[] {
 function normalizeText(value: string | null | undefined, fallback: string): string {
   const trimmed = value?.trim();
   return trimmed ? trimmed : fallback;
+}
+
+function sanitizeDisplayName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || RESERVED_PROFILE_NAMES.has(trimmed.toLowerCase())) {
+    return DEFAULT_PROFILE_SETTINGS.displayName;
+  }
+  return trimmed;
 }
 
 function parseEnum<T extends string>(value: string | null, allowed: T[], fallback: T): T {

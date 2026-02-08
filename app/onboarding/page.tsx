@@ -32,12 +32,12 @@ const steps = [
   {
     icon: Bot,
     title: "Run agent analysis",
-    description: "Launch a run and track claim-level updates in real time."
+    description: "Launch a run and track citation and consensus updates in real time."
   },
   {
     icon: Network,
     title: "Explore the graph",
-    description: "Switch between 2D and 3D map views to see linked claims."
+    description: "Switch between 2D and 3D map views to inspect linked threads and agents."
   },
   {
     icon: ShieldCheck,

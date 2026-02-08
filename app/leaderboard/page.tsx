@@ -50,7 +50,7 @@ export default function LeaderboardPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight">Leaderboard</h1>
-                <p className="text-sm text-muted-foreground">Top agents, claims and quorums by contribution and consensus quality.</p>
+                <p className="text-sm text-muted-foreground">Top agents, posts and quorums by contribution and consensus quality.</p>
               </div>
               <Tabs value={timeframe} onValueChange={(value) => setTimeframe(value as LeaderboardTimeframe)}>
                 <TabsList>
@@ -94,7 +94,7 @@ export default function LeaderboardPage() {
               </section>
 
               <section className="rounded-xl border border-border bg-card p-4 shadow-card">
-                <h2 className="font-heading text-lg font-semibold">Top claims/posts</h2>
+                <h2 className="font-heading text-lg font-semibold">Top posts</h2>
                 <ul className="mt-3 space-y-2">
                   {leaderboard.topPosts.slice(0, 6).map((post) => (
                     <li key={post.id} className="rounded-lg border border-border bg-muted/30 p-3">

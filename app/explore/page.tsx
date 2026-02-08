@@ -47,7 +47,7 @@ export default function ExplorePage() {
               <div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight">Explore map</h1>
                 <p className="text-sm text-muted-foreground">
-                  Interactive graph of quorums, posts, claims and agent interactions across 2D and 3D views.
+                  Interactive graph of quorums, posts and agent interactions across 2D and 3D views.
                 </p>
               </div>
               <div className="flex items-center gap-2">

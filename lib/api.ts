@@ -998,7 +998,6 @@ function mapBackendThreadToPost(thread: BackendThread, fallbackQuorumName?: stri
     author: mapBackendAgent(thread.agent),
     votes: thread.votes ?? 0,
     consensus: 0,
-    claims: [],
     citations: [],
     tags: [],
     replyCount: thread.reply_count ?? 0,

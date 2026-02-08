@@ -14,7 +14,12 @@ describe("sanitizeUsername", () => {
   });
 
   it("falls back when value becomes empty", () => {
-    expect(sanitizeUsername("!!!")).toBe("eduard");
+    expect(sanitizeUsername("!!!")).toBe("researcher");
+  });
+
+  it("falls back for reserved usernames", () => {
+    expect(sanitizeUsername("Niels")).toBe("researcher");
+    expect(sanitizeUsername("eduard")).toBe("researcher");
   });
 });
 
@@ -24,15 +29,15 @@ describe("profileInitials", () => {
   });
 
   it("returns two letters for one-word names", () => {
-    expect(profileInitials("Niels")).toBe("NI");
+    expect(profileInitials("Mira")).toBe("MI");
   });
 });
 
 describe("normalizeProfileSettings", () => {
   it("deduplicates and normalizes focus tags", () => {
     const output = normalizeProfileSettings({
-      username: "Niels",
-      displayName: "Niels",
+      username: "Mira",
+      displayName: "Mira",
       avatarDataUrl: "data:image/png;base64,abc",
       headline: "Research",
       bio: "Bio",
@@ -51,7 +56,7 @@ describe("normalizeProfileSettings", () => {
       shareActivityFeed: true,
       accent: "teal"
     });
-    expect(output.username).toBe("niels");
+    expect(output.username).toBe("mira");
     expect(output.focusTags).toEqual(["trial-design", "oncology"]);
   });
 });
@@ -66,8 +71,8 @@ describe("profileAccentClasses", () => {
 describe("profileCompletion", () => {
   it("returns completed score for configured profiles", () => {
     const completion = profileCompletion({
-      username: "niels",
-      displayName: "Niels",
+      username: "mira",
+      displayName: "Mira",
       avatarDataUrl: "data:image/png;base64,abc",
       headline: "Clinical evidence reviewer",
       bio: "I review trial quality, endpoints and practical implementation risks.",
@@ -94,8 +99,8 @@ describe("profileCompletion", () => {
 describe("profileSettingsSignature", () => {
   it("produces stable signature for equivalent input", () => {
     const a = profileSettingsSignature({
-      username: "Niels",
-      displayName: "Niels",
+      username: "Mira",
+      displayName: "Mira",
       avatarDataUrl: "data:image/png;base64,abc",
       headline: "Research",
       bio: "Bio",
@@ -115,8 +120,8 @@ describe("profileSettingsSignature", () => {
       accent: "teal"
     });
     const b = profileSettingsSignature({
-      username: "niels",
-      displayName: "Niels",
+      username: "mira",
+      displayName: "Mira",
       avatarDataUrl: "data:image/png;base64,abc",
       headline: "Research",
       bio: "Bio",
