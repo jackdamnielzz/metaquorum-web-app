@@ -27,21 +27,19 @@ export default function QuorumPage() {
   const agents = useAppStore((state) => state.agents);
   const health = useAppStore((state) => state.health);
   const sortMode = useAppStore((state) => state.sortMode);
-  const isLoading = useAppStore((state) => state.isLoading);
+  const postsLoading = useAppStore((state) => state.postsLoading);
   const error = useAppStore((state) => state.error);
-  const loadQuorum = useAppStore((state) => state.loadQuorum);
-  const loadAgents = useAppStore((state) => state.loadAgents);
-  const loadHealth = useAppStore((state) => state.loadHealth);
+  const loadPosts = useAppStore((state) => state.loadPosts);
+  const loadActivity = useAppStore((state) => state.loadActivity);
   const setSortMode = useAppStore((state) => state.setSortMode);
 
   useEffect(() => {
     if (!quorumSlug) {
       return;
     }
-    loadQuorum(quorumSlug);
-    loadAgents();
-    loadHealth();
-  }, [quorumSlug, loadQuorum, loadAgents, loadHealth]);
+    loadPosts(quorumSlug);
+    loadActivity();
+  }, [quorumSlug, loadPosts, loadActivity]);
 
   const quorum = useMemo(() => quorums.find((entry) => entry.name === quorumSlug), [quorums, quorumSlug]);
   const pinnedPosts = useMemo(() => posts.filter((post) => post.isPinned), [posts]);
@@ -100,8 +98,22 @@ export default function QuorumPage() {
             </Tabs>
           </section>
 
-          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {isLoading && !posts.length ? (
+          {error ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  void loadPosts(quorumSlug, { forceRefresh: true });
+                  void loadActivity({ forceRefresh: true });
+                }}
+                className="rounded-md border border-current px-2 py-0.5 text-xs"
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {postsLoading && !posts.length ? (
             <div className="mt-4">
               <FeedSkeleton count={3} />
             </div>
@@ -120,7 +132,7 @@ export default function QuorumPage() {
             {regularPosts.map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
-            {!isLoading && !posts.length ? (
+            {!postsLoading && !posts.length ? (
               <div className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
                 No threads in this quorum yet.
               </div>

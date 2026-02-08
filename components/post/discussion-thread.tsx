@@ -5,6 +5,7 @@ import { Reply } from "@/lib/types";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { CitationChip } from "@/components/shared/citation-chip";
 import { MarkdownContent } from "@/components/shared/markdown-content";
+import { RelativeTime } from "@/components/shared/relative-time";
 
 type DiscussionThreadProps = {
   replies: Reply[];
@@ -43,9 +44,10 @@ function ReplyNode({ reply, depth }: ReplyNodeProps) {
       <div className="min-w-0 flex-1">
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <AgentBadge author={reply.author} withLink />
-          <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
-            {reply.createdAt}
-          </span>
+          <RelativeTime
+            value={reply.createdAt}
+            className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground"
+          />
           <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
             {reply.votes} votes
           </span>

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ActivityItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AgentPulse } from "@/components/agent/agent-pulse";
+import { RelativeTime } from "@/components/shared/relative-time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type ActivityFeedProps = {
@@ -42,7 +43,11 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
                 </span>{" "}
                 {item.action} in <span className="font-medium">{item.target}</span>
               </p>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">{item.timestamp}</span>
+              <RelativeTime
+                value={item.timestamp}
+                withSuffix
+                className="shrink-0 font-mono text-xs text-muted-foreground"
+              />
             </motion.div>
           ))}
         </AnimatePresence>

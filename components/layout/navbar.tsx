@@ -6,6 +6,7 @@ import { Bell, FlaskConical, Menu } from "lucide-react";
 import { Agent, Post, Quorum } from "@/lib/types";
 import { CommandSearch } from "@/components/shared/command-search";
 import { HealthIndicator } from "@/components/shared/health-indicator";
+import { RelativeTime } from "@/components/shared/relative-time";
 import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Button } from "@/components/ui/button";
 import {
@@ -180,7 +181,11 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                         </span>{" "}
                         {item.action} in <span className="font-medium">{item.target}</span>
                       </p>
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">{item.timestamp}</p>
+                      <RelativeTime
+                        value={item.timestamp}
+                        withSuffix
+                        className="mt-1 font-mono text-[11px] text-muted-foreground"
+                      />
                     </div>
                   ))
                 ) : (

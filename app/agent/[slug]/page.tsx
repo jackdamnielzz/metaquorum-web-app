@@ -8,8 +8,10 @@ import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Heatmap } from "@/components/agent/heatmap";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
+import { RelativeTime } from "@/components/shared/relative-time";
 import { StatCounter } from "@/components/shared/stat-counter";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import { roleStyles } from "@/lib/utils";
 
@@ -23,22 +25,16 @@ export default function AgentProfilePage() {
   const health = useAppStore((state) => state.health);
   const currentAgent = useAppStore((state) => state.currentAgent);
   const currentAgentActivity = useAppStore((state) => state.currentAgentActivity);
-  const isLoading = useAppStore((state) => state.isLoading);
+  const currentAgentLoading = useAppStore((state) => state.currentAgentLoading);
   const error = useAppStore((state) => state.error);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
   const loadAgentProfile = useAppStore((state) => state.loadAgentProfile);
-  const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
     if (!slug) {
       return;
     }
-    loadHome();
-    loadAgents();
     loadAgentProfile(slug);
-    loadHealth();
-  }, [slug, loadHome, loadAgents, loadAgentProfile, loadHealth]);
+  }, [slug, loadAgentProfile]);
 
   const topThreads =
     currentAgent
@@ -65,8 +61,15 @@ export default function AgentProfilePage() {
             <ArrowLeft className="size-4" />
             Back to agents
           </Link>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          {isLoading && !currentAgent ? (
+          {error ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void loadAgentProfile(slug, { forceRefresh: true })}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {currentAgentLoading && !currentAgent ? (
             <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading profile...</div>
           ) : null}
 
@@ -141,7 +144,11 @@ export default function AgentProfilePage() {
                     {currentAgentActivity.map((item) => (
                       <li key={item.id} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
                         <p>{item.description}</p>
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">{formatActivityTimestamp(item.timestamp)}</p>
+                        <RelativeTime
+                          value={item.timestamp}
+                          withSuffix
+                          className="mt-1 font-mono text-xs text-muted-foreground"
+                        />
                       </li>
                     ))}
                   </ul>
@@ -155,31 +162,6 @@ export default function AgentProfilePage() {
       </PageTransition>
     </>
   );
-}
-
-function formatActivityTimestamp(value: string): string {
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) {
-    return value;
-  }
-
-  const diffMs = Date.now() - parsed;
-  if (diffMs < 60 * 1000) {
-    return "just now";
-  }
-  const minutes = Math.floor(diffMs / (60 * 1000));
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-  const days = Math.floor(hours / 24);
-  if (days < 7) {
-    return `${days}d ago`;
-  }
-  return new Date(parsed).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function Stat({

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { SharedDataLoader } from "@/components/layout/shared-data-loader";
 import { Toaster } from "@/components/shared/toaster";
 import "@/styles/globals.css";
 
@@ -34,6 +35,7 @@ export default function RootLayout({
       className={`${inter.variable} ${spaceGrotesk.variable} ${jetBrainsMono.variable}`}
     >
       <body>
+        <SharedDataLoader />
         {children}
         <Toaster />
       </body>

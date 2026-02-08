@@ -90,22 +90,13 @@ export default function OnboardingPage() {
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
   const health = useAppStore((state) => state.health);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
-  const loadHealth = useAppStore((state) => state.loadHealth);
-
-  useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
 
   useEffect(() => {
     let active = true;
 
     const loadSkill = async () => {
       try {
-        const response = await fetch("/api/proxy/skill.md", {
+        const response = await fetch(SKILL_URL, {
           cache: "no-store"
         });
 

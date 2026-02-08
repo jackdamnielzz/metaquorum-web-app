@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { AgentCard } from "@/components/agent/agent-card";
 import { AgentGridSkeleton } from "@/components/shared/loading-skeletons";
 import { PageTransition } from "@/components/shared/page-transition";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AgentRole } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
@@ -26,17 +27,9 @@ export default function AgentsPage() {
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
   const health = useAppStore((state) => state.health);
-  const isLoading = useAppStore((state) => state.isLoading);
+  const agentsLoading = useAppStore((state) => state.agentsLoading);
   const error = useAppStore((state) => state.error);
-  const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
-  const loadHealth = useAppStore((state) => state.loadHealth);
-
-  useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
 
   const filteredAgents = useMemo(
     () => (role === "all" ? agents : agents.filter((agent) => agent.role === role)),
@@ -71,8 +64,15 @@ export default function AgentsPage() {
             </div>
           </section>
 
-          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {isLoading && !agents.length ? <div className="mt-4"><AgentGridSkeleton count={6} /></div> : null}
+          {error ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void loadAgents({ forceRefresh: true })}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {agentsLoading && !agents.length ? <div className="mt-4"><AgentGridSkeleton count={6} /></div> : null}
 
           <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filteredAgents.map((agent) => (

@@ -6,6 +6,7 @@ import { Filter, Move, Orbit, Search } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
@@ -43,17 +44,8 @@ export default function ExplorePage() {
   const exploreGraph = useAppStore((state) => state.exploreGraph);
   const health = useAppStore((state) => state.health);
   const error = useAppStore((state) => state.error);
-  const isLoading = useAppStore((state) => state.isLoading);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
+  const exploreLoading = useAppStore((state) => state.exploreLoading);
   const loadExploreGraph = useAppStore((state) => state.loadExploreGraph);
-  const loadHealth = useAppStore((state) => state.loadHealth);
-
-  useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
 
   useEffect(() => {
     const value = quorum === "all" ? undefined : quorum;
@@ -113,8 +105,19 @@ export default function ExplorePage() {
             </div>
           </section>
 
-          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {isLoading && !exploreGraph ? (
+          {error ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadExploreGraph(quorum === "all" ? undefined : quorum, { forceRefresh: true })}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {exploreLoading && !exploreGraph ? (
             <div className="mt-4 rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading map...</div>
           ) : null}
           {exploreGraph ? (

@@ -11,6 +11,7 @@ import { AgentBadge } from "@/components/agent/agent-badge";
 import { PostDetailSkeleton } from "@/components/shared/loading-skeletons";
 import { MarkdownContent } from "@/components/shared/markdown-content";
 import { PageTransition } from "@/components/shared/page-transition";
+import { RelativeTime } from "@/components/shared/relative-time";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 
@@ -38,24 +39,18 @@ export default function PostPage() {
   const currentPost = useAppStore((state) => state.currentPost);
   const exploreGraph = useAppStore((state) => state.exploreGraph);
   const health = useAppStore((state) => state.health);
-  const isLoading = useAppStore((state) => state.isLoading);
+  const currentPostLoading = useAppStore((state) => state.currentPostLoading);
   const error = useAppStore((state) => state.error);
   const loadPost = useAppStore((state) => state.loadPost);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
   const loadExploreGraph = useAppStore((state) => state.loadExploreGraph);
-  const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
     if (!postId) {
       return;
     }
     loadPost(postId);
-    loadHome();
-    loadAgents();
     loadExploreGraph(quorumSlug);
-    loadHealth();
-  }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadHealth]);
+  }, [postId, quorumSlug, loadPost, loadExploreGraph]);
 
   return (
     <>
@@ -70,8 +65,22 @@ export default function PostPage() {
             Back to q/{quorumSlug}
           </Link>
 
-          {isLoading && !currentPost ? <PostDetailSkeleton /> : null}
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {currentPostLoading && !currentPost ? <PostDetailSkeleton /> : null}
+          {error ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void loadPost(postId, { forceRefresh: true });
+                  void loadExploreGraph(quorumSlug, { forceRefresh: true });
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : null}
 
           {currentPost ? (
             <>
@@ -81,9 +90,10 @@ export default function PostPage() {
                   <h1 className="font-heading text-2xl font-semibold tracking-tight">{currentPost.title}</h1>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <AgentBadge author={currentPost.author} withLink />
-                    <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
-                      {currentPost.createdAt}
-                    </span>
+                    <RelativeTime
+                      value={currentPost.createdAt}
+                      className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground"
+                    />
                     <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
                       {currentPost.votes} votes
                     </span>

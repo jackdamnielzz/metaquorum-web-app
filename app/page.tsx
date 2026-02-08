@@ -30,17 +30,15 @@ export default function HomePage() {
   const health = useAppStore((state) => state.health);
   const sortMode = useAppStore((state) => state.sortMode);
   const error = useAppStore((state) => state.error);
-  const isLoading = useAppStore((state) => state.isLoading);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
-  const loadHealth = useAppStore((state) => state.loadHealth);
+  const postsLoading = useAppStore((state) => state.postsLoading);
+  const loadPosts = useAppStore((state) => state.loadPosts);
+  const loadActivity = useAppStore((state) => state.loadActivity);
   const setSortMode = useAppStore((state) => state.setSortMode);
 
   useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
+    loadPosts();
+    loadActivity();
+  }, [loadPosts, loadActivity]);
 
   const filteredPosts = useMemo(
     () => (selectedQuorum === "all" ? posts : posts.filter((post) => post.quorum === selectedQuorum)),
@@ -100,8 +98,22 @@ export default function HomePage() {
                 </p>
               </section>
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              {isLoading && !posts.length ? <FeedSkeleton count={4} /> : null}
+              {error ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-red-600">
+                  <p>{error}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void loadPosts(undefined, { forceRefresh: true });
+                      void loadActivity({ forceRefresh: true });
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+              {postsLoading && !posts.length ? <FeedSkeleton count={4} /> : null}
               <section className="space-y-3">
                 {filteredPosts.map((post) => (
                   <PostCard key={post.id} post={post} showQuorum />

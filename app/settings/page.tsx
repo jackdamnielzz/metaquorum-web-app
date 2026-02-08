@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
@@ -12,15 +11,6 @@ export default function SettingsPage() {
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
   const health = useAppStore((state) => state.health);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
-  const loadHealth = useAppStore((state) => state.loadHealth);
-
-  useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
 
   return (
     <>

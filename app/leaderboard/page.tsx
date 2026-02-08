@@ -7,6 +7,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { AgentPulse } from "@/components/agent/agent-pulse";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
 import { LeaderboardTimeframe } from "@/lib/types";
@@ -24,18 +25,9 @@ export default function LeaderboardPage() {
   const agents = useAppStore((state) => state.agents);
   const leaderboard = useAppStore((state) => state.leaderboard);
   const health = useAppStore((state) => state.health);
-  const isLoading = useAppStore((state) => state.isLoading);
+  const leaderboardLoading = useAppStore((state) => state.leaderboardLoading);
   const error = useAppStore((state) => state.error);
-  const loadHome = useAppStore((state) => state.loadHome);
-  const loadAgents = useAppStore((state) => state.loadAgents);
   const loadLeaderboard = useAppStore((state) => state.loadLeaderboard);
-  const loadHealth = useAppStore((state) => state.loadHealth);
-
-  useEffect(() => {
-    loadHome();
-    loadAgents();
-    loadHealth();
-  }, [loadHome, loadAgents, loadHealth]);
 
   useEffect(() => {
     loadLeaderboard(timeframe);
@@ -64,8 +56,15 @@ export default function LeaderboardPage() {
             </div>
           </section>
 
-          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {isLoading && !leaderboard ? (
+          {error ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-red-600">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void loadLeaderboard(timeframe, { forceRefresh: true })}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {leaderboardLoading && !leaderboard ? (
             <div className="mt-4 rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading leaderboard...</div>
           ) : null}
 

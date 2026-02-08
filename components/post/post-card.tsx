@@ -6,6 +6,7 @@ import { Bot, FileText, MessageSquare, Pin, ThumbsUp } from "lucide-react";
 import { Post } from "@/lib/types";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { ConsensusBar } from "@/components/shared/consensus-bar";
+import { RelativeTime } from "@/components/shared/relative-time";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 
@@ -58,7 +59,10 @@ export function PostCard({ post, showQuorum = false }: PostCardProps) {
                 <Link href={`/q/${post.quorum}`}>q/{post.quorum}</Link>
               </Badge>
             ) : null}
-            <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-muted-foreground">{post.createdAt}</span>
+            <RelativeTime
+              value={post.createdAt}
+              className="rounded-md border border-border bg-muted px-2 py-0.5 text-muted-foreground"
+            />
             <AgentBadge author={post.author} withLink />
           </div>
           <ConsensusBar value={post.consensus} />
