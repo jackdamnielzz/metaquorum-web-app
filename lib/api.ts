@@ -23,6 +23,24 @@ const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
 export const API_BASE = resolveApiBase();
 export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
 let warnedLocalApiInRemoteRuntime = false;
+const CLIENT_CACHE_TTL_MS = {
+  health: 8_000,
+  quorums: 60_000,
+  posts: 20_000,
+  activity: 12_000,
+  agents: 30_000,
+  leaderboard: 25_000,
+  exploreGraph: 25_000
+} as const;
+
+type ClientCacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+const clientCache = new Map<string, ClientCacheEntry<unknown>>();
+const clientInflight = new Map<string, Promise<unknown>>();
+let clientCacheVersion = 0;
 
 type SubmitPostInput = Partial<Post> & Pick<Post, "title" | "body" | "quorum">;
 type SubmitReplyInput = {
@@ -170,6 +188,112 @@ type BackendAgentActivityItem = {
   vote?: number | null;
 };
 
+function isClientRuntime(): boolean {
+  return typeof window !== "undefined";
+}
+
+function postsCacheKey(quorum?: string): string {
+  return quorum ? `posts:${quorum}` : "posts:all";
+}
+
+function getClientCachedEntry<T>(key: string): ClientCacheEntry<T> | null {
+  if (!isClientRuntime()) {
+    return null;
+  }
+
+  const cached = clientCache.get(key) as ClientCacheEntry<T> | undefined;
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    clientCache.delete(key);
+    return null;
+  }
+
+  return cached;
+}
+
+function getClientCachedValue<T>(key: string): T | null {
+  return getClientCachedEntry<T>(key)?.value ?? null;
+}
+
+function getClientInflightValue<T>(key: string): Promise<T> | null {
+  if (!isClientRuntime()) {
+    return null;
+  }
+  return (clientInflight.get(key) as Promise<T> | undefined) ?? null;
+}
+
+async function withClientCache<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+  if (!isClientRuntime() || ttlMs <= 0) {
+    return loader();
+  }
+
+  const cachedEntry = getClientCachedEntry<T>(key);
+  if (cachedEntry) {
+    return cachedEntry.value;
+  }
+
+  const inflight = getClientInflightValue<T>(key);
+  if (inflight) {
+    return inflight;
+  }
+
+  const versionAtStart = clientCacheVersion;
+  const pending = loader()
+    .then((value) => {
+      if (clientCacheVersion === versionAtStart) {
+        clientCache.set(key, {
+          value,
+          expiresAt: Date.now() + ttlMs
+        });
+      }
+      return value;
+    })
+    .finally(() => {
+      clientInflight.delete(key);
+    });
+
+  clientInflight.set(key, pending as Promise<unknown>);
+  return pending;
+}
+
+function invalidateClientCache(prefixes: string[]) {
+  if (!isClientRuntime()) {
+    return;
+  }
+
+  clientCacheVersion += 1;
+
+  for (const key of clientCache.keys()) {
+    if (prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
+      clientCache.delete(key);
+    }
+  }
+
+  for (const key of clientInflight.keys()) {
+    if (prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
+      clientInflight.delete(key);
+    }
+  }
+}
+
+async function readWarmPostsCache(): Promise<Post[]> {
+  const key = postsCacheKey();
+  const cached = getClientCachedValue<Post[]>(key);
+  if (cached) {
+    return cached;
+  }
+
+  const inflight = getClientInflightValue<Post[]>(key);
+  if (inflight) {
+    return inflight;
+  }
+
+  return [];
+}
+
 export function isReadOnlyApp(): boolean {
   return READ_ONLY_APP;
 }
@@ -191,35 +315,55 @@ export function subscribeAnalysisEventsStream(
 }
 
 export async function fetchHealth(): Promise<{ status: string; timestamp?: string }> {
-  return requestJson<{ status: string; timestamp?: string }>("/health", { cache: "no-store" });
+  return withClientCache("health", CLIENT_CACHE_TTL_MS.health, () =>
+    requestJson<{ status: string; timestamp?: string }>("/health", { cache: "no-store" })
+  );
 }
 
 export async function fetchQuorums(): Promise<Quorum[]> {
-  const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
-  const hydrated = await Promise.all(
-    quorums.map(async (quorum, index) => {
-      const details = await requestMaybeApi<{ quorum: BackendQuorum }>(`/quorums/${encodeURIComponent(quorum.name)}`);
-      return mapBackendQuorum(details?.quorum ?? quorum, index);
-    })
-  );
-  return hydrated;
+  return withClientCache("quorums", CLIENT_CACHE_TTL_MS.quorums, async () => {
+    const { quorums } = await requestApi<{ quorums: BackendQuorum[] }>("/quorums");
+    const base = quorums ?? [];
+    const needsHydration = base.some(
+      (quorum) =>
+        !quorum.display_name ||
+        quorum.description === undefined ||
+        typeof quorum.thread_count !== "number"
+    );
+
+    if (!needsHydration) {
+      return base.map((quorum, index) => mapBackendQuorum(quorum, index));
+    }
+
+    const hydrated = await Promise.all(
+      base.map(async (quorum, index) => {
+        const details = await requestMaybeApi<{ quorum: BackendQuorum }>(`/quorums/${encodeURIComponent(quorum.name)}`);
+        return mapBackendQuorum(details?.quorum ?? quorum, index);
+      })
+    );
+
+    return hydrated;
+  });
 }
 
 export async function fetchPosts(quorum?: string): Promise<Post[]> {
-  if (quorum) {
-    const threads = await fetchAllThreadsForQuorum(quorum);
-    return threads.map((thread) => mapBackendThreadToPost(thread, quorum));
-  }
+  const cacheKey = postsCacheKey(quorum);
+  return withClientCache(cacheKey, CLIENT_CACHE_TTL_MS.posts, async () => {
+    if (quorum) {
+      const threads = await fetchAllThreadsForQuorum(quorum);
+      return threads.map((thread) => mapBackendThreadToPost(thread, quorum));
+    }
 
-  const quorums = await fetchQuorums();
-  const groups = await Promise.all(
-    quorums.map(async (entry) => {
-      const threads = await fetchAllThreadsForQuorum(entry.name);
-      return threads.map((thread) => mapBackendThreadToPost(thread, entry.name));
-    })
-  );
+    const quorums = await fetchQuorums();
+    const groups = await Promise.all(
+      quorums.map(async (entry) => {
+        const threads = await fetchAllThreadsForQuorum(entry.name);
+        return threads.map((thread) => mapBackendThreadToPost(thread, entry.name));
+      })
+    );
 
-  return groups.flat();
+    return groups.flat();
+  });
 }
 
 export async function fetchPost(id: string): Promise<PostDetail | null> {
@@ -233,129 +377,137 @@ export async function fetchPost(id: string): Promise<PostDetail | null> {
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
-  const [backendAgents, leaderboardEntries, posts] = await Promise.all([
-    fetchAllAgents(),
-    fetchAgentLeaderboardEntries(),
-    fetchPosts()
-  ]);
+  return withClientCache("agents", CLIENT_CACHE_TTL_MS.agents, async () => {
+    const [backendAgents, leaderboardEntries, posts] = await Promise.all([
+      fetchAllAgents(),
+      fetchAgentLeaderboardEntries(),
+      readWarmPostsCache()
+    ]);
 
-  const postsBySlug = new Map<string, number>();
-  posts.forEach((post) => {
-    if (post.author.type !== "agent") {
-      return;
-    }
-    postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
-  });
+    const postsBySlug = new Map<string, number>();
+    posts.forEach((post) => {
+      if (post.author.type !== "agent") {
+        return;
+      }
+      postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
+    });
 
-  const leaderboardBySlug = new Map<string, BackendAgentLeaderboardEntry>();
-  leaderboardEntries.forEach((entry) => {
-    leaderboardBySlug.set(normalizeSlug(entry.name), entry);
-  });
+    const leaderboardBySlug = new Map<string, BackendAgentLeaderboardEntry>();
+    leaderboardEntries.forEach((entry) => {
+      leaderboardBySlug.set(normalizeSlug(entry.name), entry);
+    });
 
-  const mergedBySlug = new Map<string, Agent>();
-  backendAgents.forEach((backendAgent) => {
-    const slug = normalizeSlug(backendAgent.name);
-    const ranked = leaderboardBySlug.get(slug);
-    mergedBySlug.set(
-      slug,
-      mapBackendAgent(backendAgent, {
-        posts: postsBySlug.get(slug) ?? 0,
-        rank: ranked?.rank ?? 0,
-        karma: ranked?.karma ?? backendAgent.karma ?? 0
-      })
-    );
-  });
-
-  leaderboardEntries.forEach((entry) => {
-    const slug = normalizeSlug(entry.name);
-    if (mergedBySlug.has(slug)) {
-      return;
-    }
-    mergedBySlug.set(
-      slug,
-      mapBackendAgent(
-        {
-          id: `agent-${slug}`,
-          name: entry.name,
-          description: entry.description ?? null,
-          avatar_url: entry.avatar_url ?? null,
-          karma: entry.karma ?? 0,
-          created_at: entry.created_at
-        },
-        {
+    const mergedBySlug = new Map<string, Agent>();
+    backendAgents.forEach((backendAgent) => {
+      const slug = normalizeSlug(backendAgent.name);
+      const ranked = leaderboardBySlug.get(slug);
+      mergedBySlug.set(
+        slug,
+        mapBackendAgent(backendAgent, {
           posts: postsBySlug.get(slug) ?? 0,
-          rank: entry.rank ?? 0,
-          karma: entry.karma ?? 0
-        }
-      )
-    );
-  });
+          rank: ranked?.rank ?? 0,
+          karma: ranked?.karma ?? backendAgent.karma ?? 0
+        })
+      );
+    });
 
-  return [...mergedBySlug.values()]
-    .sort((a, b) => {
-      const aHasRank = a.stats.rank > 0;
-      const bHasRank = b.stats.rank > 0;
-      if (aHasRank && bHasRank && a.stats.rank !== b.stats.rank) {
-        return a.stats.rank - b.stats.rank;
+    leaderboardEntries.forEach((entry) => {
+      const slug = normalizeSlug(entry.name);
+      if (mergedBySlug.has(slug)) {
+        return;
       }
-      if (aHasRank !== bHasRank) {
-        return aHasRank ? -1 : 1;
-      }
-      return b.stats.karma - a.stats.karma || b.stats.posts - a.stats.posts || a.name.localeCompare(b.name);
-    })
-    .map((agent, index) => ({
-      ...agent,
-      stats: {
-        ...agent.stats,
-        rank: agent.stats.rank || index + 1
-      }
-    }));
+      mergedBySlug.set(
+        slug,
+        mapBackendAgent(
+          {
+            id: `agent-${slug}`,
+            name: entry.name,
+            description: entry.description ?? null,
+            avatar_url: entry.avatar_url ?? null,
+            karma: entry.karma ?? 0,
+            created_at: entry.created_at
+          },
+          {
+            posts: postsBySlug.get(slug) ?? 0,
+            rank: entry.rank ?? 0,
+            karma: entry.karma ?? 0
+          }
+        )
+      );
+    });
+
+    return [...mergedBySlug.values()]
+      .sort((a, b) => {
+        const aHasRank = a.stats.rank > 0;
+        const bHasRank = b.stats.rank > 0;
+        if (aHasRank && bHasRank && a.stats.rank !== b.stats.rank) {
+          return a.stats.rank - b.stats.rank;
+        }
+        if (aHasRank !== bHasRank) {
+          return aHasRank ? -1 : 1;
+        }
+        return b.stats.karma - a.stats.karma || b.stats.posts - a.stats.posts || a.name.localeCompare(b.name);
+      })
+      .map((agent, index) => ({
+        ...agent,
+        stats: {
+          ...agent.stats,
+          rank: agent.stats.rank || index + 1
+        }
+      }));
+  });
 }
 
 export async function fetchAgent(slug: string): Promise<Agent | null> {
-  const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
-  if (payload?.agent) {
-    return mapBackendAgent(payload.agent);
-  }
-
-  const nameFromDirectory = await findAgentNameBySlug(slug);
-  if (nameFromDirectory && nameFromDirectory !== slug) {
-    const namedPayload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(nameFromDirectory)}`);
-    if (namedPayload?.agent) {
-      return mapBackendAgent(namedPayload.agent);
+  return withClientCache(`agent:${slug}`, CLIENT_CACHE_TTL_MS.agents, async () => {
+    const payload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(slug)}`);
+    if (payload?.agent) {
+      return mapBackendAgent(payload.agent);
     }
-  }
 
-  const agents = await fetchAgents();
-  return agents.find((entry) => entry.slug === slug) ?? null;
+    const nameFromDirectory = await findAgentNameBySlug(slug);
+    if (nameFromDirectory && nameFromDirectory !== slug) {
+      const namedPayload = await requestMaybeApi<{ agent: BackendAgent }>(`/agents/${encodeURIComponent(nameFromDirectory)}`);
+      if (namedPayload?.agent) {
+        return mapBackendAgent(namedPayload.agent);
+      }
+    }
+
+    const agents = await fetchAgents();
+    return agents.find((entry) => entry.slug === slug) ?? null;
+  });
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
-  try {
-    const { feed } = await requestApi<{ feed: BackendFeedItem[] }>("/feed?limit=100");
-    return [...(feed ?? [])]
-      .sort((a, b) => parseIsoDateToMs(b.date) - parseIsoDateToMs(a.date))
-      .map((item, index) => mapBackendFeedItem(item, index));
-  } catch {
-    return [];
-  }
+  return withClientCache("activity", CLIENT_CACHE_TTL_MS.activity, async () => {
+    try {
+      const { feed } = await requestApi<{ feed: BackendFeedItem[] }>("/feed?limit=100");
+      return [...(feed ?? [])]
+        .sort((a, b) => parseIsoDateToMs(b.date) - parseIsoDateToMs(a.date))
+        .map((item, index) => mapBackendFeedItem(item, index));
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function fetchAgentActivity(slug: string): Promise<AgentActivity[]> {
-  const namesToTry = new Set<string>([slug]);
-  const nameFromDirectory = await findAgentNameBySlug(slug);
-  if (nameFromDirectory) {
-    namesToTry.add(nameFromDirectory);
-  }
-
-  for (const name of namesToTry) {
-    const activity = await fetchAgentActivityByName(name);
-    if (activity.length > 0) {
-      return activity;
+  return withClientCache(`agentActivity:${slug}`, CLIENT_CACHE_TTL_MS.activity, async () => {
+    const namesToTry = new Set<string>([slug]);
+    const nameFromDirectory = await findAgentNameBySlug(slug);
+    if (nameFromDirectory) {
+      namesToTry.add(nameFromDirectory);
     }
-  }
 
-  return [];
+    for (const name of namesToTry) {
+      const activity = await fetchAgentActivityByName(name);
+      if (activity.length > 0) {
+        return activity;
+      }
+    }
+
+    return [];
+  });
 }
 
 export async function fetchUserProfile(_username: string): Promise<UserProfile | null> {
@@ -363,108 +515,113 @@ export async function fetchUserProfile(_username: string): Promise<UserProfile |
 }
 
 export async function fetchLeaderboard(timeframe: LeaderboardTimeframe = "all"): Promise<LeaderboardData> {
-  const [quorums, posts, leaderboardEntries] = await Promise.all([
-    fetchQuorums(),
-    fetchPosts(),
-    fetchAgentLeaderboardEntries()
-  ]);
+  return withClientCache(`leaderboard:${timeframe}`, CLIENT_CACHE_TTL_MS.leaderboard, async () => {
+    const [quorums, posts, leaderboardEntries] = await Promise.all([
+      fetchQuorums(),
+      fetchPosts(),
+      fetchAgentLeaderboardEntries()
+    ]);
 
-  const timeframeHours = timeframeToHours(timeframe);
-  const scopedPosts = posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
-  const postsBySlug = new Map<string, number>();
-  scopedPosts.forEach((post) => {
-    if (post.author.type !== "agent") {
-      return;
-    }
-    postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
-  });
-
-  const topPosts = [...scopedPosts]
-    .sort((a, b) => scorePost(b) - scorePost(a))
-    .slice(0, 8);
-
-  const topQuorums = quorums
-    .map((quorum) => {
-      const related = scopedPosts.filter((post) => post.quorum === quorum.name);
-      const activityScore = related.reduce(
-        (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
-        0
-      );
-      return { quorum, activityScore };
-    })
-    .filter((entry) => entry.activityScore > 0)
-    .sort((a, b) => b.activityScore - a.activityScore)
-    .slice(0, 8);
-
-  let topAgents = leaderboardEntries
-    .slice(0, 8)
-    .map((entry, index) => {
-      const slug = normalizeSlug(entry.name);
-      return mapBackendAgent(
-        {
-          id: `agent-${slug}`,
-          name: entry.name,
-          description: entry.description ?? null,
-          avatar_url: entry.avatar_url ?? null,
-          karma: entry.karma ?? 0,
-          created_at: entry.created_at
-        },
-        {
-          posts: postsBySlug.get(slug) ?? 0,
-          rank: entry.rank ?? index + 1,
-          karma: entry.karma ?? 0
-        }
-      );
+    const timeframeHours = timeframeToHours(timeframe);
+    const scopedPosts = posts.filter((post) => postAgeHours(post.createdAt) <= timeframeHours);
+    const postsBySlug = new Map<string, number>();
+    scopedPosts.forEach((post) => {
+      if (post.author.type !== "agent") {
+        return;
+      }
+      postsBySlug.set(post.author.slug, (postsBySlug.get(post.author.slug) ?? 0) + 1);
     });
 
-  if (!topAgents.length) {
-    const fallbackAgents = await fetchAgents();
-    topAgents = fallbackAgents.slice(0, 8);
-  }
+    const topPosts = [...scopedPosts]
+      .sort((a, b) => scorePost(b) - scorePost(a))
+      .slice(0, 8);
 
-  return { topAgents, topPosts, topQuorums };
+    const topQuorums = quorums
+      .map((quorum) => {
+        const related = scopedPosts.filter((post) => post.quorum === quorum.name);
+        const activityScore = related.reduce(
+          (score, post) => score + post.votes + post.replyCount * 1.5 + post.consensus * 0.25,
+          0
+        );
+        return { quorum, activityScore };
+      })
+      .filter((entry) => entry.activityScore > 0)
+      .sort((a, b) => b.activityScore - a.activityScore)
+      .slice(0, 8);
+
+    let topAgents = leaderboardEntries
+      .slice(0, 8)
+      .map((entry, index) => {
+        const slug = normalizeSlug(entry.name);
+        return mapBackendAgent(
+          {
+            id: `agent-${slug}`,
+            name: entry.name,
+            description: entry.description ?? null,
+            avatar_url: entry.avatar_url ?? null,
+            karma: entry.karma ?? 0,
+            created_at: entry.created_at
+          },
+          {
+            posts: postsBySlug.get(slug) ?? 0,
+            rank: entry.rank ?? index + 1,
+            karma: entry.karma ?? 0
+          }
+        );
+      });
+
+    if (!topAgents.length) {
+      const fallbackAgents = await fetchAgents();
+      topAgents = fallbackAgents.slice(0, 8);
+    }
+
+    return { topAgents, topPosts, topQuorums };
+  });
 }
 
 export async function fetchExploreGraph(quorum?: string): Promise<ExploreGraphData> {
-  const posts = await fetchPosts(quorum);
-  const nodes = new Map<string, ExploreNode>();
-  const links: ExploreLink[] = [];
+  const graphKey = quorum ? `exploreGraph:${quorum}` : "exploreGraph:all";
+  return withClientCache(graphKey, CLIENT_CACHE_TTL_MS.exploreGraph, async () => {
+    const posts = await fetchPosts(quorum);
+    const nodes = new Map<string, ExploreNode>();
+    const links: ExploreLink[] = [];
 
-  for (const post of posts) {
-    const quorumKey = `q:${post.quorum}`;
-    if (!nodes.has(quorumKey)) {
-      nodes.set(quorumKey, {
-        id: quorumKey,
-        label: `q/${post.quorum}`,
-        type: "quorum",
-        quorum: post.quorum
+    for (const post of posts) {
+      const quorumKey = `q:${post.quorum}`;
+      if (!nodes.has(quorumKey)) {
+        nodes.set(quorumKey, {
+          id: quorumKey,
+          label: `q/${post.quorum}`,
+          type: "quorum",
+          quorum: post.quorum
+        });
+      }
+
+      const postKey = `p:${post.id}`;
+      nodes.set(postKey, {
+        id: postKey,
+        label: post.title,
+        type: "post",
+        quorum: post.quorum,
+        confidence: post.consensus
       });
+      links.push({ source: quorumKey, target: postKey });
+
+      const authorKey = post.author.type === "agent" ? `a:${post.author.slug}` : `u:${post.author.username}`;
+      if (!nodes.has(authorKey)) {
+        nodes.set(authorKey, {
+          id: authorKey,
+          label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
+          type: "agent",
+          quorum: post.quorum
+        });
+      }
+
+      links.push({ source: authorKey, target: postKey });
     }
 
-    const postKey = `p:${post.id}`;
-    nodes.set(postKey, {
-      id: postKey,
-      label: post.title,
-      type: "post",
-      quorum: post.quorum,
-      confidence: post.consensus
-    });
-    links.push({ source: quorumKey, target: postKey });
-
-    const authorKey = post.author.type === "agent" ? `a:${post.author.slug}` : `u:${post.author.username}`;
-    if (!nodes.has(authorKey)) {
-      nodes.set(authorKey, {
-        id: authorKey,
-        label: post.author.type === "agent" ? post.author.name : `@${post.author.username}`,
-        type: "agent",
-        quorum: post.quorum
-      });
-    }
-
-    links.push({ source: authorKey, target: postKey });
-  }
-
-  return { nodes: [...nodes.values()], links };
+    return { nodes: [...nodes.values()], links };
+  });
 }
 
 export async function fetchPostAnalysisRuns(_postId: string): Promise<AnalysisRun[]> {
@@ -505,6 +662,7 @@ export async function submitPost(data: SubmitPostInput): Promise<Post> {
     })
   });
 
+  invalidateClientCache(["posts", "quorums", "activity", "leaderboard", "exploreGraph", "agents", "agent"]);
   return mapBackendThreadToPost(payload.thread, data.quorum);
 }
 
@@ -523,6 +681,7 @@ export async function submitReply(input: SubmitReplyInput): Promise<PostDetail |
     })
   });
 
+  invalidateClientCache(["posts", "activity", "leaderboard", "exploreGraph", "agents", "agent", "agentActivity"]);
   return fetchPost(input.postId);
 }
 
@@ -545,6 +704,7 @@ export async function createAdminQuorum(input: CreateAdminQuorumInput, apiKey: s
     })
   });
 
+  invalidateClientCache(["quorums", "posts", "activity", "leaderboard", "exploreGraph"]);
   return mapBackendQuorum(payload.quorum, 0);
 }
 
@@ -554,6 +714,7 @@ export async function deleteAdminQuorum(id: string, apiKey: string): Promise<str
     headers: buildBearerHeaders(apiKey)
   });
 
+  invalidateClientCache(["quorums", "posts", "activity", "leaderboard", "exploreGraph"]);
   return payload.message ?? "Quorum deleted";
 }
 
@@ -576,6 +737,7 @@ export async function registerAgent(input: RegisterAgentInput): Promise<Register
   if (payload.important) {
     registered.important = payload.important;
   }
+  invalidateClientCache(["agents", "agent", "agentActivity", "leaderboard"]);
   return registered;
 }
 
@@ -605,6 +767,7 @@ export async function verifyAgentClaim(input: VerifyAgentClaimInput): Promise<Ve
     })
   });
 
+  invalidateClientCache(["agents", "agent", "agentActivity", "leaderboard"]);
   return {
     message: payload.message ?? "Agent claimed successfully.",
     agent: payload.agent ? mapBackendAgent(payload.agent) : null
@@ -629,6 +792,7 @@ export async function updateCurrentAgent(input: UpdateCurrentAgentInput, apiKey:
     })
   });
 
+  invalidateClientCache(["agents", "agent", "agentActivity", "leaderboard"]);
   return mapBackendAgent(payload.agent);
 }
 

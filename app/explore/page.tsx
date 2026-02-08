@@ -1,15 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Filter, Move, Orbit, Search } from "lucide-react";
-import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
-import { KnowledgeGraph3D } from "@/components/graph/knowledge-graph-3d";
 import { Navbar } from "@/components/layout/navbar";
 import { PageTransition } from "@/components/shared/page-transition";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
+
+const KnowledgeGraph = dynamic(
+  () => import("@/components/graph/knowledge-graph").then((mod) => mod.KnowledgeGraph),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+        Loading graph...
+      </div>
+    )
+  }
+);
+
+const KnowledgeGraph3D = dynamic(
+  () => import("@/components/graph/knowledge-graph-3d").then((mod) => mod.KnowledgeGraph3D),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+        Loading 3D graph...
+      </div>
+    )
+  }
+);
 
 export default function ExplorePage() {
   const [quorum, setQuorum] = useState<string>("all");

@@ -480,8 +480,9 @@ function computeForceLayout(nodes: ExploreNode[], links: ExploreGraphData["links
     positioned.map((node) => [node.id, { x: 0, y: 0 }])
   );
   const nodeMap = new Map(positioned.map((node) => [node.id, node] as const));
+  const iterationBudget = nodes.length > 180 ? 60 : nodes.length > 100 ? 90 : nodes.length > 60 ? 120 : 160;
 
-  for (let iteration = 0; iteration < 200; iteration += 1) {
+  for (let iteration = 0; iteration < iterationBudget; iteration += 1) {
     const forces = new Map<string, { x: number; y: number }>(
       positioned.map((node) => [node.id, { x: 0, y: 0 }])
     );

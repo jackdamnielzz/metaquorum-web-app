@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Network } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
-import { KnowledgeGraph } from "@/components/graph/knowledge-graph";
 import { AnalysisPanel } from "@/components/post/analysis-panel";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
@@ -18,6 +18,18 @@ import { Button } from "@/components/ui/button";
 import { isReadOnlyApp, subscribeAnalysisEventsStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/lib/toast-store";
+
+const KnowledgeGraph = dynamic(
+  () => import("@/components/graph/knowledge-graph").then((mod) => mod.KnowledgeGraph),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+        Loading graph...
+      </div>
+    )
+  }
+);
 
 export default function PostPage() {
   const params = useParams<{ quorum: string; id: string }>();
