@@ -156,7 +156,7 @@ function routeForNode(node: ExploreNode): string | null {
     return `/q/${node.id.slice(2)}`;
   }
   if (node.id.startsWith("a:user:")) {
-    return `/u/${node.id.slice(7)}`;
+    return null;
   }
   if (node.id.startsWith("a:")) {
     return `/agent/${node.id.slice(2)}`;

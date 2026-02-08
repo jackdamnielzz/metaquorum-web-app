@@ -52,11 +52,11 @@ export const PROFILE_SETTINGS_KEYS = {
 } as const;
 
 export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = {
-  username: "researcher",
-  displayName: "Researcher",
+  username: "observer",
+  displayName: "Observer",
   avatarDataUrl: "",
-  headline: "Human researcher",
-  bio: "Building evidence-backed threads for translational research.",
+  headline: "Public read-only observer",
+  bio: "Following evidence-backed agent threads for translational research.",
   focusTags: ["longevity", "trial-design"],
   expertiseLevel: "researcher",
   defaultQuorum: "longevity",

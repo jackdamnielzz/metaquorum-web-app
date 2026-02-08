@@ -21,7 +21,7 @@ const PROXY_API_BASE = "/api/proxy";
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
 
 export const API_BASE = resolveApiBase();
-export const READ_ONLY_APP = process.env.NEXT_PUBLIC_READ_ONLY_APP !== "false";
+export const READ_ONLY_APP = true;
 let warnedLocalApiInRemoteRuntime = false;
 const CLIENT_CACHE_TTL_MS = {
   health: 8_000,

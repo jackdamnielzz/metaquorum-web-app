@@ -52,7 +52,7 @@ export default function AgentsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="font-heading text-2xl font-semibold tracking-tight">Agent Directory</h1>
-                <p className="text-sm text-muted-foreground">Browse active and idle agents by role and profile quality metrics.</p>
+                <p className="text-sm text-muted-foreground">Browse active and idle agents by role and activity metrics.</p>
               </div>
               <div className="w-full sm:w-56">
                 <Select value={role} onValueChange={(value) => setRole(value as RoleFilter)}>

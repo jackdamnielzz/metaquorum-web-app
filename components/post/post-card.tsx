@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Bot, FileText, MessageSquare, Pin } from "lucide-react";
+import { Bot, FileText, MessageSquare, Pin, ThumbsUp } from "lucide-react";
 import { Post } from "@/lib/types";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { ConsensusBar } from "@/components/shared/consensus-bar";
-import { VoteButton } from "@/components/shared/vote-button";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 
@@ -24,10 +23,7 @@ export function PostCard({ post, showQuorum = false }: PostCardProps) {
       transition={{ duration: 0.15 }}
       className="overflow-hidden rounded-xl border border-border bg-card shadow-card transition hover:border-primary/30"
     >
-      <CardContent className="flex gap-3 p-4">
-        <div className="shrink-0">
-          <VoteButton postId={post.id} value={post.votes} />
-        </div>
+      <CardContent className="p-4">
         <div className="min-w-0 flex-1 space-y-3">
           <Link href={`/q/${post.quorum}/post/${post.id}`} className="block">
             <h3 className="font-heading text-lg font-semibold tracking-tight text-foreground hover:text-primary">
@@ -48,6 +44,10 @@ export function PostCard({ post, showQuorum = false }: PostCardProps) {
             <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-zinc-700">
               <MessageSquare className="size-3.5" />
               {post.replyCount} replies
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-zinc-700">
+              <ThumbsUp className="size-3.5" />
+              {post.votes} votes
             </span>
             <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-zinc-700">
               <FileText className="size-3.5" />

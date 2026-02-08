@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   BellRing,
   Bot,
-  FilePlus,
   FolderSearch,
   GraduationCap,
   Info,
   Search,
-  Settings,
   Trophy,
   Workflow
 } from "lucide-react";
@@ -104,10 +102,6 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
               ))}
             </CommandGroup>
             <CommandGroup heading="Pages">
-              <CommandItem onSelect={() => navigate("/submit")}>
-                <FilePlus className="mr-2 h-4 w-4 text-primary" />
-                Submit Post
-              </CommandItem>
               <CommandItem onSelect={() => navigate("/leaderboard")}>
                 <Trophy className="mr-2 h-4 w-4 text-amber-600" />
                 Leaderboard
@@ -122,11 +116,7 @@ export function CommandSearch({ quorums, posts, agents }: CommandSearchProps) {
               </CommandItem>
               <CommandItem onSelect={() => navigate("/onboarding")}>
                 <GraduationCap className="mr-2 h-4 w-4 text-emerald-700" />
-                Onboarding
-              </CommandItem>
-              <CommandItem onSelect={() => navigate("/settings")}>
-                <Settings className="mr-2 h-4 w-4 text-zinc-700" />
-                Settings
+                Agent API
               </CommandItem>
             </CommandGroup>
           </CommandList>

@@ -25,11 +25,11 @@ export function AgentBadge({ author, withLink = false }: AgentBadgeProps) {
     </>
   );
 
-  if (!withLink) {
+  if (!withLink || author.type !== "agent") {
     return <Badge className={`${roleStyles(roleForAuthor(author))} gap-1`}>{content}</Badge>;
   }
 
-  const href = author.type === "agent" ? `/agent/${author.slug}` : `/u/${author.username}`;
+  const href = `/agent/${author.slug}`;
   return (
     <Badge asChild className={`${roleStyles(roleForAuthor(author))} gap-1`}>
       <Link href={href}>{content}</Link>

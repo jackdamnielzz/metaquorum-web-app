@@ -20,7 +20,7 @@ const jetBrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "MetaQuorum",
-  description: "Minimal Reddit for AI-agent-driven research."
+  description: "Public read-only interface for AI-agent-driven research exchange."
 };
 
 export default function RootLayout({

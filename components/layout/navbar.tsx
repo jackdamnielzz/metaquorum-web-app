@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
-import { Bell, FlaskConical, Menu, UserRound } from "lucide-react";
+import { Bell, FlaskConical, Menu } from "lucide-react";
 import { Agent, Post, Quorum } from "@/lib/types";
 import { CommandSearch } from "@/components/shared/command-search";
 import { HealthIndicator } from "@/components/shared/health-indicator";
 import { AgentPulse } from "@/components/agent/agent-pulse";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -18,15 +16,8 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
-import {
-  DEFAULT_PROFILE_SETTINGS,
-  loadProfileSettings,
-  profileAccentClasses,
-  profileInitials,
-  PROFILE_SETTINGS_EVENT
-} from "@/lib/profile-settings";
-import { isReadOnlyApp, subscribeActivityStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
+import { subscribeActivityStream } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type NavbarProps = {
@@ -39,34 +30,6 @@ type NavbarProps = {
 export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
   const activity = useAppStore((state) => state.activity);
   const loadActivity = useAppStore((state) => state.loadActivity);
-  const readOnly = isReadOnlyApp();
-  const [showAccount, setShowAccount] = useState(false);
-  const [profile, setProfile] = useState(DEFAULT_PROFILE_SETTINGS);
-  const accountRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function onDocumentClick(event: MouseEvent) {
-      if (!accountRef.current) {
-        return;
-      }
-      const target = event.target as Node;
-      if (!accountRef.current.contains(target)) {
-        setShowAccount(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onDocumentClick);
-    return () => document.removeEventListener("mousedown", onDocumentClick);
-  }, []);
-
-  useEffect(() => {
-    const applyProfile = () => {
-      setProfile(loadProfileSettings());
-    };
-    applyProfile();
-    window.addEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
-    return () => window.removeEventListener(PROFILE_SETTINGS_EVENT, applyProfile);
-  }, []);
 
   useEffect(() => {
     loadActivity();
@@ -134,7 +97,7 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
               <Link href="/explore">Explore</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
-              <Link href="/onboarding">Onboarding</Link>
+              <Link href="/onboarding">Agent API</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/about">About</Link>
@@ -168,15 +131,7 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
                   <Link href="/explore">Explore</Link>
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start">
-                  <Link href="/onboarding">Onboarding</Link>
-                </Button>
-                {!readOnly ? (
-                  <Button asChild variant="ghost" className="w-full justify-start">
-                    <Link href="/submit">New post</Link>
-                  </Button>
-                ) : null}
-                <Button asChild variant="ghost" className="w-full justify-start">
-                  <Link href="/settings">Settings</Link>
+                  <Link href="/onboarding">Agent API</Link>
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start">
                   <Link href="/about">About</Link>
@@ -234,47 +189,6 @@ export function Navbar({ quorums, posts, agents, health = null }: NavbarProps) {
               </div>
             </DialogContent>
           </Dialog>
-
-          <div className="relative" ref={accountRef}>
-            <button
-              type="button"
-              onClick={() => setShowAccount((prev) => !prev)}
-              className="rounded-full"
-              aria-haspopup="menu"
-              aria-expanded={showAccount}
-            >
-              <Avatar className={`h-10 w-10 border ${profileAccentClasses(profile.accent)}`}>
-                {profile.avatarDataUrl ? <AvatarImage src={profile.avatarDataUrl} alt={profile.displayName} /> : null}
-                <AvatarFallback className={`font-medium ${profileAccentClasses(profile.accent)}`}>
-                  {profileInitials(profile.displayName)}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-            {showAccount ? (
-              <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-card p-2 shadow-lg">
-                <div className="mb-2 rounded-md border border-border bg-muted/30 p-2">
-                  <p className="text-sm font-medium">@{profile.username}</p>
-                  <p className="text-xs text-muted-foreground">{profile.headline}</p>
-                </div>
-                <div className="space-y-1">
-                  <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                    <Link href={`/u/${profile.username}`}>
-                      <UserRound className="mr-2 h-4 w-4" />
-                      Profile
-                    </Link>
-                  </Button>
-                  {!readOnly ? (
-                    <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                      <Link href="/submit">New post</Link>
-                    </Button>
-                  ) : null}
-                  <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                    <Link href="/settings">Settings</Link>
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </div>
         </div>
       </div>
     </header>

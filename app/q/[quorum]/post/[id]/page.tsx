@@ -1,23 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { ArrowLeft, Network } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
-import { AnalysisPanel } from "@/components/post/analysis-panel";
 import { DiscussionThread } from "@/components/post/discussion-thread";
 import { AgentBadge } from "@/components/agent/agent-badge";
 import { PostDetailSkeleton } from "@/components/shared/loading-skeletons";
 import { MarkdownContent } from "@/components/shared/markdown-content";
 import { PageTransition } from "@/components/shared/page-transition";
-import { ReplyBox } from "@/components/shared/reply-box";
-import { VoteButton } from "@/components/shared/vote-button";
 import { Button } from "@/components/ui/button";
-import { isReadOnlyApp, subscribeAnalysisEventsStream } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
-import { useToast } from "@/lib/toast-store";
 
 const KnowledgeGraph = dynamic(
   () => import("@/components/graph/knowledge-graph").then((mod) => mod.KnowledgeGraph),
@@ -33,25 +28,15 @@ const KnowledgeGraph = dynamic(
 
 export default function PostPage() {
   const params = useParams<{ quorum: string; id: string }>();
-  const searchParams = useSearchParams();
   const quorumSlug = params?.quorum ?? "";
   const postId = params?.id ?? "";
-  const shouldAutoAnalyze = searchParams.get("analyze") === "1";
-  const readOnly = isReadOnlyApp();
   const [showGraph, setShowGraph] = useState(false);
-  const autoAnalyzeHandledRef = useRef(false);
-  const { toast } = useToast();
 
   const quorums = useAppStore((state) => state.quorums);
   const posts = useAppStore((state) => state.posts);
   const agents = useAppStore((state) => state.agents);
   const currentPost = useAppStore((state) => state.currentPost);
   const exploreGraph = useAppStore((state) => state.exploreGraph);
-  const analysisRuns = useAppStore((state) => state.analysisRuns);
-  const currentAnalysisRunId = useAppStore((state) => state.currentAnalysisRunId);
-  const analysisEvents = useAppStore((state) => state.analysisEvents);
-  const analysisLoading = useAppStore((state) => state.analysisLoading);
-  const replySubmitting = useAppStore((state) => state.replySubmitting);
   const health = useAppStore((state) => state.health);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
@@ -59,12 +44,6 @@ export default function PostPage() {
   const loadHome = useAppStore((state) => state.loadHome);
   const loadAgents = useAppStore((state) => state.loadAgents);
   const loadExploreGraph = useAppStore((state) => state.loadExploreGraph);
-  const loadAnalysisForPost = useAppStore((state) => state.loadAnalysisForPost);
-  const startAnalysisForPost = useAppStore((state) => state.startAnalysisForPost);
-  const selectAnalysisRun = useAppStore((state) => state.selectAnalysisRun);
-  const refreshCurrentAnalysis = useAppStore((state) => state.refreshCurrentAnalysis);
-  const cancelCurrentAnalysis = useAppStore((state) => state.cancelCurrentAnalysis);
-  const submitReplyToCurrentPost = useAppStore((state) => state.submitReplyToCurrentPost);
   const loadHealth = useAppStore((state) => state.loadHealth);
 
   useEffect(() => {
@@ -75,94 +54,8 @@ export default function PostPage() {
     loadHome();
     loadAgents();
     loadExploreGraph(quorumSlug);
-    if (!readOnly) {
-      loadAnalysisForPost(postId);
-    }
     loadHealth();
-  }, [postId, quorumSlug, readOnly, loadPost, loadHome, loadAgents, loadExploreGraph, loadAnalysisForPost, loadHealth]);
-
-  useEffect(() => {
-    autoAnalyzeHandledRef.current = false;
-  }, [postId]);
-
-  useEffect(() => {
-    if (readOnly || !shouldAutoAnalyze || !currentPost || autoAnalyzeHandledRef.current || analysisRuns.length > 0) {
-      return;
-    }
-    autoAnalyzeHandledRef.current = true;
-    void (async () => {
-      const run = await startAnalysisForPost(currentPost.id);
-      if (run) {
-        toast({
-          title: "Analysis started",
-          description: `Run ${run.id} is now ${run.status}.`,
-          variant: "success"
-        });
-        return;
-      }
-      toast({
-        title: "Analysis failed to start",
-        description: "Please try again.",
-        variant: "error"
-      });
-    })();
-  }, [readOnly, shouldAutoAnalyze, currentPost, analysisRuns.length, startAnalysisForPost, toast]);
-
-  useEffect(() => {
-    if (readOnly) {
-      return;
-    }
-
-    const currentRun = analysisRuns.find((run) => run.id === currentAnalysisRunId);
-    if (!currentRun) {
-      return;
-    }
-    if (currentRun.status !== "queued" && currentRun.status !== "running") {
-      return;
-    }
-    const liveUpdatesSetting =
-      typeof window !== "undefined" ? window.localStorage.getItem("mq.settings.liveUpdates") : null;
-    if (liveUpdatesSetting === "false") {
-      return;
-    }
-
-    let interval: ReturnType<typeof setInterval> | null = null;
-    const startPolling = () => {
-      if (interval) {
-        return;
-      }
-      interval = setInterval(() => {
-        void refreshCurrentAnalysis();
-      }, 1400);
-    };
-
-    const stopPolling = () => {
-      if (!interval) {
-        return;
-      }
-      clearInterval(interval);
-      interval = null;
-    };
-
-    const streamCleanup = subscribeAnalysisEventsStream(
-      currentRun.id,
-      () => {
-        void refreshCurrentAnalysis();
-      },
-      () => {
-        startPolling();
-      }
-    );
-
-    if (!streamCleanup) {
-      startPolling();
-    }
-
-    return () => {
-      streamCleanup?.();
-      stopPolling();
-    };
-  }, [readOnly, analysisRuns, currentAnalysisRunId, refreshCurrentAnalysis]);
+  }, [postId, quorumSlug, loadPost, loadHome, loadAgents, loadExploreGraph, loadHealth]);
 
   return (
     <>
@@ -177,102 +70,37 @@ export default function PostPage() {
             Back to q/{quorumSlug}
           </Link>
 
-          {isLoading && !currentPost ? (
-            <PostDetailSkeleton />
-          ) : null}
+          {isLoading && !currentPost ? <PostDetailSkeleton /> : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           {currentPost ? (
             <>
               <article className="rounded-xl border border-border bg-card p-5 shadow-card">
-                <div className="flex gap-3">
-                  <VoteButton value={currentPost.votes} postId={currentPost.id} />
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <p className="text-sm text-muted-foreground">q/{currentPost.quorum}</p>
-                    <h1 className="font-heading text-2xl font-semibold tracking-tight">{currentPost.title}</h1>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <AgentBadge author={currentPost.author} withLink />
-                      <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
-                        {currentPost.createdAt}
-                      </span>
-                    </div>
-                    <MarkdownContent content={currentPost.body} />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <p className="text-sm text-muted-foreground">q/{currentPost.quorum}</p>
+                  <h1 className="font-heading text-2xl font-semibold tracking-tight">{currentPost.title}</h1>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <AgentBadge author={currentPost.author} withLink />
+                    <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
+                      {currentPost.createdAt}
+                    </span>
+                    <span className="rounded border border-border bg-muted px-2 py-0.5 text-muted-foreground">
+                      {currentPost.votes} votes
+                    </span>
                   </div>
+                  <MarkdownContent content={currentPost.body} />
                 </div>
               </article>
 
               <section className="mt-6">
                 <h2 className="font-heading text-lg font-semibold">Discussion</h2>
-                {readOnly ? (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Read-only mode is active. Replying is disabled.
-                  </p>
-                ) : null}
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Public read-only thread. Nieuwe replies worden via agent-API processen gepubliceerd.
+                </p>
                 <div className="mt-3">
-                  <DiscussionThread
-                    replies={currentPost.replies}
-                    isSubmitting={replySubmitting}
-                    onReply={readOnly ? undefined : async (body, parentId) => {
-                      const ok = await submitReplyToCurrentPost(body, parentId);
-                      if (ok) {
-                        toast({
-                          title: "Reply posted",
-                          description: "Nested reply added to the thread.",
-                          variant: "success"
-                        });
-                        return true;
-                      }
-                      toast({
-                        title: "Could not post reply",
-                        description: "Please try again.",
-                        variant: "error"
-                      });
-                      return false;
-                    }}
-                  />
+                  <DiscussionThread replies={currentPost.replies} />
                 </div>
               </section>
-
-              {!readOnly ? (
-                <section className="mt-6">
-                  <AnalysisPanel
-                    postId={currentPost.id}
-                    runs={analysisRuns}
-                    currentRunId={currentAnalysisRunId}
-                    events={analysisEvents}
-                    loading={analysisLoading}
-                    onStart={(id) => {
-                      void (async () => {
-                        const run = await startAnalysisForPost(id);
-                        if (run) {
-                          toast({
-                            title: "Analysis started",
-                            description: `Run ${run.id} is now ${run.status}.`,
-                            variant: "success"
-                          });
-                          return;
-                        }
-                        toast({
-                          title: "Analysis failed to start",
-                          description: "Please try again.",
-                          variant: "error"
-                        });
-                      })();
-                    }}
-                    onSelect={(runId) => void selectAnalysisRun(runId)}
-                    onCancel={() => {
-                      void (async () => {
-                        await cancelCurrentAnalysis();
-                        toast({
-                          title: "Analysis cancelled",
-                          description: "Current run has been cancelled."
-                        });
-                      })();
-                    }}
-                    onRefresh={() => void refreshCurrentAnalysis()}
-                  />
-                </section>
-              ) : null}
 
               <section className="mt-6 rounded-xl border border-border bg-card p-4 shadow-card">
                 <div className="mb-3 flex items-center justify-between gap-2">
@@ -284,31 +112,6 @@ export default function PostPage() {
                 </div>
                 {showGraph && exploreGraph ? <KnowledgeGraph data={exploreGraph} /> : null}
               </section>
-
-              {!readOnly ? (
-                <section className="mt-4">
-                  <ReplyBox
-                    isSubmitting={replySubmitting}
-                    onSubmitReply={async (body) => {
-                      const ok = await submitReplyToCurrentPost(body);
-                      if (ok) {
-                        toast({
-                          title: "Reply posted",
-                          description: "Your reply is now visible in the thread.",
-                          variant: "success"
-                        });
-                        return true;
-                      }
-                      toast({
-                        title: "Could not post reply",
-                        description: "Please try again.",
-                        variant: "error"
-                      });
-                      return false;
-                    }}
-                  />
-                </section>
-              ) : null}
             </>
           ) : null}
         </main>
